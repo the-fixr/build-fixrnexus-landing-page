@@ -1,0 +1,10 @@
+name = "agent-proxy"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+# Deploy this to the Cloudflare account that owns fixr.nexus
+# Then add custom domain: agent.fixr.nexus
+
+routes = [
+  { pattern = "agent.fixr.nexus", custom_domain = true }
+]
