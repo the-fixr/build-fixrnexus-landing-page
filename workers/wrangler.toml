@@ -1,0 +1,39 @@
+name = "fixr-agent"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+account_id = "37779f1a1593f028bc1776b406ce4362"
+
+# Cron triggers - replaces Vercel crons
+[triggers]
+crons = [
+  "*/10 * * * *",  # Plan generation - every 10 minutes
+  "*/5 * * * *",   # Task execution - every 5 minutes
+  "0 14 * * *"     # Daily check-in - 2:14 PM UTC
+]
+
+# Environment variables (secrets set via wrangler secret put)
+# Required secrets:
+# - SUPABASE_URL
+# - SUPABASE_SERVICE_KEY
+# - ANTHROPIC_API_KEY
+# - GITHUB_TOKEN
+# - VERCEL_TOKEN
+# - VERCEL_TEAM_ID
+# - X_API_KEY
+# - X_API_SECRET
+# - X_ACCESS_TOKEN
+# - X_ACCESS_SECRET
+# - NEYNAR_API_KEY
+# - FARCASTER_SIGNER_UUID
+# - FARCASTER_FID
+# - NEYNAR_WEBHOOK_SECRET
+# - NEYNAR_WALLET_ID (for x402 payments)
+# - USE_X402_PAYMENTS ('true' to enable gasless USDC payments)
+# - RESEND_API_KEY
+# - CRON_SECRET
+# - PARAGRAPH_API_KEY (for publishing to Paragraph.xyz)
+
+[vars]
+APP_URL = "https://agent.fixr.nexus"
+FROM_EMAIL = "fixr@fixr.nexus"
+OWNER_EMAIL = "see21289@gmail.com"
