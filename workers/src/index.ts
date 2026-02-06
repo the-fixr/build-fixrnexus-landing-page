@@ -58,6 +58,12 @@ import {
 } from './lib/shipTracker';
 import { generateDocsPage } from './docs';
 import {
+  publicApiMiddleware,
+  getAccessTier,
+  getPaymentInfo,
+  API_CONFIG,
+} from './lib/publicApi';
+import {
   postDigestToX,
   postRugAlertToX,
   postAnnouncementToX,
@@ -517,6 +523,97 @@ app.post('/api/config/refresh', async (c) => {
     return c.json({ success: true, message: 'Config cache cleared', config });
   } catch (error) {
     console.error('Config refresh error:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// ============ Database Migration API ============
+app.post('/api/migrate/daily-posts', async (c) => {
+  try {
+    const supabase = createClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_KEY);
+
+    // Test if table exists by querying it
+    const { error: testError } = await supabase
+      .from('daily_posts')
+      .select('id')
+      .limit(1);
+
+    // Check various error messages that indicate table doesn't exist
+    const tableDoesNotExist = testError && (
+      testError.message.includes('does not exist') ||
+      testError.message.includes('Could not find the table') ||
+      testError.code === '42P01'
+    );
+
+    if (tableDoesNotExist) {
+      // Return the SQL for manual execution
+      const migrationSql = `
+-- Run this SQL in Supabase SQL Editor to create the daily_posts table
+CREATE TABLE IF NOT EXISTS daily_posts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  post_type TEXT NOT NULL,
+  cast_hash TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_daily_posts_type_date
+  ON daily_posts (post_type, created_at);
+
+-- Optional: Clean up old records periodically
+-- DELETE FROM daily_posts WHERE created_at < NOW() - INTERVAL '30 days';
+      `.trim();
+
+      return c.json({
+        success: false,
+        error: 'Table does not exist. Please run the migration SQL manually in Supabase SQL Editor.',
+        tableExists: false,
+        sql: migrationSql
+      });
+    }
+
+    if (testError) {
+      return c.json({
+        success: false,
+        error: testError.message,
+        tableExists: false
+      });
+    }
+
+    // Table exists
+    return c.json({ success: true, message: 'Table already exists', tableExists: true });
+  } catch (error) {
+    console.error('Migration error:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Check daily posts table status
+app.get('/api/migrate/daily-posts/status', async (c) => {
+  try {
+    const supabase = createClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_KEY);
+
+    const { data, error } = await supabase
+      .from('daily_posts')
+      .select('id, post_type, created_at')
+      .order('created_at', { ascending: false })
+      .limit(10);
+
+    if (error) {
+      return c.json({
+        success: false,
+        tableExists: false,
+        error: error.message,
+      });
+    }
+
+    return c.json({
+      success: true,
+      tableExists: true,
+      recentPosts: data,
+      count: data?.length || 0,
+    });
+  } catch (error) {
+    console.error('Status check error:', error);
     return c.json({ success: false, error: String(error) }, 500);
   }
 });
@@ -1188,6 +1285,643 @@ app.post('/api/gmx/ui-fee/claim', async (c) => {
   } catch (error) {
     console.error('GMX UI fee claim error:', error);
     return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// ============ CREATE2 Contract Deployment ============
+// Factory addresses stored in config: factory_address_{chain}
+
+// Check Fixr's deployer wallet balances (admin)
+app.get('/api/deploy/balances', async (c) => {
+  try {
+    const { checkBalances, getDeployerAddress } = await import('./lib/deployer');
+    const balances = await checkBalances(c.env);
+    const address = getDeployerAddress(c.env);
+
+    return c.json({
+      success: true,
+      address,
+      balances,
+      supportedChains: ['base', 'ethereum', 'arbitrum'],
+      note: 'Monad support coming soon (needs gas)',
+    });
+  } catch (error) {
+    console.error('Balance check error:', error);
+    return c.json({ error: String(error) }, 500);
+  }
+});
+
+// Get factory addresses for all chains
+app.get('/api/deploy/factories', async (c) => {
+  try {
+    const { SUPPORTED_CHAINS } = await import('./lib/deployer');
+    const { FACTORY_ADDRESSES } = await import('./lib/factory-addresses');
+
+    const factories: Record<string, { address: string | null; chainId: number; explorer: string }> = {};
+
+    for (const [chain, config] of Object.entries(SUPPORTED_CHAINS)) {
+      factories[chain] = {
+        address: FACTORY_ADDRESSES[chain] || null,
+        chainId: config.id,
+        explorer: config.explorer,
+      };
+    }
+
+    return c.json({ success: true, factories });
+  } catch (error) {
+    console.error('Get factories error:', error);
+    return c.json({ error: String(error) }, 500);
+  }
+});
+
+// Deploy factory contract to a chain (admin only - Fixr pays gas)
+app.post('/api/deploy/factory', async (c) => {
+  try {
+    const { deployFactory, SUPPORTED_CHAINS } = await import('./lib/deployer');
+    const { setConfig } = await import('./lib/config');
+    const { chain } = await c.req.json();
+
+    if (!chain || !(chain in SUPPORTED_CHAINS)) {
+      return c.json({ error: 'Invalid chain. Supported: base, ethereum, arbitrum' }, 400);
+    }
+
+    console.log(`[Deploy] Admin deploying factory to ${chain}...`);
+
+    const result = await deployFactory(chain as 'base' | 'ethereum' | 'arbitrum', c.env);
+
+    if (result.success && result.txHash) {
+      // Store pending tx hash for later verification
+      await setConfig(c.env, `factory_pending_tx_${chain}`, result.txHash);
+      console.log(`[Deploy] Factory tx submitted: ${result.txHash}`);
+    }
+
+    return c.json(result);
+  } catch (error) {
+    console.error('Deploy factory error:', error);
+    return c.json({ error: String(error) }, 500);
+  }
+});
+
+// Check factory deployment status and save address if confirmed
+app.post('/api/deploy/factory/check', async (c) => {
+  try {
+    const { checkFactoryDeployment, SUPPORTED_CHAINS } = await import('./lib/deployer');
+    const { getConfig, setConfig } = await import('./lib/config');
+    const { chain, txHash: providedTxHash } = await c.req.json();
+
+    if (!chain || !(chain in SUPPORTED_CHAINS)) {
+      return c.json({ error: 'Invalid chain. Supported: base, ethereum, arbitrum' }, 400);
+    }
+
+    // Use provided txHash or look up pending tx
+    const txHash = providedTxHash || await getConfig(c.env, `factory_pending_tx_${chain}`);
+
+    if (!txHash) {
+      return c.json({ error: 'No pending factory deployment for this chain' }, 400);
+    }
+
+    const result = await checkFactoryDeployment(
+      chain as 'base' | 'ethereum' | 'arbitrum',
+      txHash as `0x${string}`,
+      c.env
+    );
+
+    if (result.success && result.address) {
+      // Store factory address in config
+      await setConfig(c.env, `factory_address_${chain}`, result.address);
+      // Clear pending tx
+      await setConfig(c.env, `factory_pending_tx_${chain}`, '');
+      console.log(`[Deploy] Factory address saved: ${result.address} on ${chain}`);
+    }
+
+    return c.json({ ...result, txHash, chain });
+  } catch (error) {
+    console.error('Check factory error:', error);
+    return c.json({ error: String(error) }, 500);
+  }
+});
+
+// Set deploy fee on factory contract (admin only - Fixr's wallet)
+app.post('/api/deploy/set-fee', async (c) => {
+  try {
+    const { setDeployFee, getDeployFee, DEPLOY_FEE, SUPPORTED_CHAINS } = await import('./lib/deployer');
+    const { FACTORY_ADDRESSES } = await import('./lib/factory-addresses');
+    const { chain } = await c.req.json();
+
+    if (!chain || !(chain in SUPPORTED_CHAINS)) {
+      return c.json({ error: 'Invalid chain. Supported: base, arbitrum' }, 400);
+    }
+
+    const factoryAddress = FACTORY_ADDRESSES[chain];
+    if (!factoryAddress) {
+      return c.json({ error: `Factory not deployed on ${chain}` }, 400);
+    }
+
+    // Get current fee first
+    const currentFee = await getDeployFee(chain as 'base' | 'arbitrum', factoryAddress, c.env);
+    console.log(`[Deploy] Current fee on ${chain}: ${currentFee}`);
+
+    if (currentFee === DEPLOY_FEE) {
+      return c.json({
+        success: true,
+        message: 'Fee already set',
+        chain,
+        factory: factoryAddress,
+        fee: DEPLOY_FEE.toString(),
+        feeEth: '0.0001',
+      });
+    }
+
+    // Set the fee
+    const result = await setDeployFee(
+      chain as 'base' | 'arbitrum',
+      factoryAddress,
+      DEPLOY_FEE,
+      c.env
+    );
+
+    if (!result.success) {
+      return c.json({ error: result.error }, 500);
+    }
+
+    return c.json({
+      success: true,
+      chain,
+      factory: factoryAddress,
+      fee: DEPLOY_FEE.toString(),
+      feeEth: '0.0001',
+      txHash: result.txHash,
+    });
+  } catch (error) {
+    console.error('Set fee error:', error);
+    return c.json({ error: String(error) }, 500);
+  }
+});
+
+// Get current deploy fees on all chains
+app.get('/api/deploy/fees', async (c) => {
+  try {
+    const { getDeployFee, SUPPORTED_CHAINS } = await import('./lib/deployer');
+    const { FACTORY_ADDRESSES } = await import('./lib/factory-addresses');
+
+    const fees: Record<string, { fee: string; feeEth: string } | { error: string }> = {};
+
+    for (const chain of ['base', 'arbitrum'] as const) {
+      const factoryAddress = FACTORY_ADDRESSES[chain];
+      if (!factoryAddress) {
+        fees[chain] = { error: 'Factory not deployed' };
+        continue;
+      }
+
+      try {
+        const fee = await getDeployFee(chain, factoryAddress, c.env);
+        fees[chain] = {
+          fee: fee.toString(),
+          feeEth: (Number(fee) / 1e18).toFixed(6),
+        };
+      } catch (err) {
+        fees[chain] = { error: err instanceof Error ? err.message : 'Unknown error' };
+      }
+    }
+
+    return c.json({ fees });
+  } catch (error) {
+    console.error('Get fees error:', error);
+    return c.json({ error: String(error) }, 500);
+  }
+});
+
+// Build deployment transaction for user (user pays gas via their wallet)
+app.post('/api/deploy/build-tx', async (c) => {
+  try {
+    const { buildDeployTransaction, generateSalt, SUPPORTED_CHAINS, DEPLOY_FEE_HEX, DEPLOY_FEE } = await import('./lib/deployer');
+    const { FACTORY_ADDRESSES } = await import('./lib/factory-addresses');
+    const body = await c.req.json();
+
+    const {
+      standard,
+      name,
+      symbol,
+      totalSupply,
+      decimals,
+      maxSupply,
+      mintPrice,
+      baseURI,
+      tokenURI,
+      selectedChains,
+      ownerAddress,
+    } = body;
+
+    if (!standard || !name || !symbol || !selectedChains?.length || !ownerAddress) {
+      return c.json({
+        error: 'Missing required fields: standard, name, symbol, selectedChains, ownerAddress',
+      }, 400);
+    }
+
+    // Generate salt for deterministic address
+    const salt = generateSalt(ownerAddress, name, symbol, standard);
+
+    // Build transactions for each chain
+    const transactions: Record<string, {
+      chainId: number;
+      factoryAddress: string;
+      to: string;
+      data: string;
+      value: string;
+      explorer: string;
+    } | { error: string }> = {};
+
+    for (const chain of selectedChains) {
+      if (!(chain in SUPPORTED_CHAINS)) {
+        transactions[chain] = { error: 'Chain not supported' };
+        continue;
+      }
+
+      const factoryAddress = FACTORY_ADDRESSES[chain];
+      if (!factoryAddress) {
+        transactions[chain] = { error: 'Factory not deployed on this chain yet' };
+        continue;
+      }
+
+      try {
+        const tx = buildDeployTransaction(factoryAddress, {
+          standard,
+          name,
+          symbol,
+          totalSupply,
+          decimals: decimals || 18,
+          maxSupply,
+          mintPrice,
+          baseURI,
+          tokenURI,
+          owner: ownerAddress,
+        });
+
+        const chainConfig = SUPPORTED_CHAINS[chain as keyof typeof SUPPORTED_CHAINS];
+
+        transactions[chain] = {
+          chainId: chainConfig.id,
+          factoryAddress,
+          to: tx.to,
+          data: tx.data,
+          value: DEPLOY_FEE_HEX, // 0.0001 ETH deploy fee
+          explorer: chainConfig.explorer,
+        };
+      } catch (err) {
+        transactions[chain] = { error: err instanceof Error ? err.message : 'Build failed' };
+      }
+    }
+
+    console.log('[Deploy] Built transactions for user:', {
+      owner: ownerAddress.slice(0, 10) + '...',
+      standard,
+      name,
+      symbol,
+      chains: selectedChains,
+    });
+
+    return c.json({
+      success: true,
+      salt,
+      owner: ownerAddress,
+      config: { standard, name, symbol, totalSupply, decimals, maxSupply, mintPrice },
+      transactions,
+      deployFee: {
+        wei: DEPLOY_FEE.toString(),
+        eth: '0.0001',
+        hex: DEPLOY_FEE_HEX,
+      },
+      instructions: 'Sign and send these transactions from your wallet. Same contract address on all chains. Each deployment costs 0.0001 ETH + gas.',
+    });
+  } catch (error) {
+    console.error('Build tx error:', error);
+    return c.json({ error: String(error) }, 500);
+  }
+});
+
+// Compute predicted address (for preview before deployment)
+app.post('/api/deploy/compute-address', async (c) => {
+  try {
+    const { generateSalt, getDeployerAddress } = await import('./lib/deployer');
+    const { deployer, standard, name, symbol } = await c.req.json();
+
+    if (!standard || !name || !symbol) {
+      return c.json({ error: 'Missing required fields: standard, name, symbol' }, 400);
+    }
+
+    const deployerAddr = deployer || getDeployerAddress(c.env);
+    const salt = generateSalt(deployerAddr, name, symbol, standard);
+
+    return c.json({
+      success: true,
+      salt,
+      deployer: deployerAddr,
+      message: 'Use /api/deploy/execute to deploy. Address determined at deployment.',
+    });
+  } catch (error) {
+    console.error('Compute address error:', error);
+    return c.json({ error: String(error) }, 500);
+  }
+});
+
+// Prepare deployment data (returns what will be deployed)
+app.post('/api/deploy/create2', async (c) => {
+  try {
+    const { generateSalt, SUPPORTED_CHAINS, getDeployerAddress } = await import('./lib/deployer');
+    const body = await c.req.json();
+    const {
+      standard,
+      name,
+      symbol,
+      totalSupply,
+      decimals,
+      maxSupply,
+      mintPrice,
+      baseURI,
+      tokenURI,
+      selectedChains,
+      ownerAddress,
+      fid,
+    } = body;
+
+    if (!standard || !selectedChains?.length) {
+      return c.json({ error: 'Missing required fields: standard, selectedChains' }, 400);
+    }
+
+    const deployerAddr = getDeployerAddress(c.env);
+    const owner = ownerAddress || deployerAddr;
+    const salt = generateSalt(owner, name || 'Token', symbol || 'TKN', standard);
+
+    // Filter to supported chains
+    const validChains = selectedChains.filter(
+      (chain: string) => chain in SUPPORTED_CHAINS
+    );
+    const unsupportedChains = selectedChains.filter(
+      (chain: string) => !(chain in SUPPORTED_CHAINS)
+    );
+
+    // Build deployment info for each chain
+    const deployments: Record<string, { chainId: number; chainName: string; explorer: string; ready: boolean }> = {};
+
+    for (const chain of validChains) {
+      const chainConfig = SUPPORTED_CHAINS[chain as keyof typeof SUPPORTED_CHAINS];
+      deployments[chain] = {
+        chainId: chainConfig.id,
+        chainName: chainConfig.name,
+        explorer: chainConfig.explorer,
+        ready: true,
+      };
+    }
+
+    console.log('[Deploy] CREATE2 preview:', {
+      standard,
+      name,
+      symbol,
+      chains: validChains,
+      owner: owner.slice(0, 10) + '...',
+      fid,
+    });
+
+    return c.json({
+      success: true,
+      salt,
+      deployer: deployerAddr,
+      owner,
+      config: {
+        standard,
+        name,
+        symbol,
+        totalSupply,
+        decimals: decimals || 18,
+        maxSupply,
+        mintPrice,
+        baseURI,
+        tokenURI,
+      },
+      deployments,
+      unsupportedChains,
+      note: unsupportedChains.length > 0
+        ? `Monad not yet supported (needs gas). Use /api/deploy/execute to deploy.`
+        : 'Ready to deploy. Use /api/deploy/execute to deploy.',
+    });
+  } catch (error) {
+    console.error('Deploy CREATE2 preview error:', error);
+    return c.json({ error: String(error) }, 500);
+  }
+});
+
+// Get deployment status - check if contract exists on each chain
+app.get('/api/deploy/status/:address', async (c) => {
+  try {
+    const { SUPPORTED_CHAINS } = await import('./lib/deployer');
+    const address = c.req.param('address');
+
+    // Check each supported chain for the contract
+    const results: Record<string, { deployed: boolean; chainId: number; explorer: string }> = {};
+
+    for (const [chain, config] of Object.entries(SUPPORTED_CHAINS)) {
+      try {
+        const response = await fetch(config.rpc, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'eth_getCode',
+            params: [address, 'latest'],
+            id: 1,
+          }),
+        });
+
+        const data = await response.json() as { result?: string };
+        const code = data.result || '0x';
+        results[chain] = {
+          deployed: code !== '0x' && code !== '0x0',
+          chainId: config.id,
+          explorer: `${config.explorer}/address/${address}`,
+        };
+      } catch {
+        results[chain] = {
+          deployed: false,
+          chainId: config.id,
+          explorer: `${config.explorer}/address/${address}`,
+        };
+      }
+    }
+
+    return c.json({
+      success: true,
+      address,
+      chains: results,
+    });
+  } catch (error) {
+    console.error('Deploy status error:', error);
+    return c.json({ error: String(error) }, 500);
+  }
+});
+
+// ============ Revenue Contract Management ============
+
+// Get all revenue contract balances
+app.get('/api/revenue/balances', async (c) => {
+  try {
+    const { getAllContractBalances, REVENUE_CONTRACTS } = await import('./lib/revenueRegistry');
+
+    const balances = await getAllContractBalances(c.env);
+
+    return c.json({
+      success: true,
+      ...balances,
+      contractCount: REVENUE_CONTRACTS.length,
+    });
+  } catch (error) {
+    console.error('Revenue balances error:', error);
+    return c.json({ error: String(error) }, 500);
+  }
+});
+
+// Get full revenue summary (for dashboard)
+app.get('/api/revenue/summary', async (c) => {
+  try {
+    const { getRevenueSummary } = await import('./lib/revenueRegistry');
+
+    const summary = await getRevenueSummary(c.env);
+
+    return c.json({
+      success: true,
+      ...summary,
+    });
+  } catch (error) {
+    console.error('Revenue summary error:', error);
+    return c.json({ error: String(error) }, 500);
+  }
+});
+
+// Get list of all tracked contracts
+app.get('/api/revenue/contracts', async (c) => {
+  try {
+    const { REVENUE_CONTRACTS } = await import('./lib/revenueRegistry');
+
+    return c.json({
+      success: true,
+      contracts: REVENUE_CONTRACTS,
+    });
+  } catch (error) {
+    console.error('Revenue contracts error:', error);
+    return c.json({ error: String(error) }, 500);
+  }
+});
+
+// Withdraw from a specific contract
+app.post('/api/revenue/withdraw/:contractId', async (c) => {
+  try {
+    const {
+      withdrawFromContract,
+      saveWithdrawalRecord,
+    } = await import('./lib/revenueRegistry');
+    const { getDeployerAddress } = await import('./lib/deployer');
+
+    const contractId = c.req.param('contractId');
+    const body = await c.req.json().catch(() => ({})) as { recipient?: string };
+
+    // Default to Fixr's wallet if no recipient specified
+    const recipient = body.recipient || getDeployerAddress(c.env);
+
+    const result = await withdrawFromContract(contractId, recipient as `0x${string}`, c.env);
+
+    // Save withdrawal record if successful
+    if (result.success && result.txHash && result.amountEth) {
+      await saveWithdrawalRecord({
+        contractId,
+        txHash: result.txHash,
+        amountEth: result.amountEth,
+        timestamp: new Date().toISOString(),
+        recipient: recipient as `0x${string}`,
+      }, c.env);
+    }
+
+    return c.json(result);
+  } catch (error) {
+    console.error('Revenue withdraw error:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Withdraw from all contracts
+app.post('/api/revenue/withdraw-all', async (c) => {
+  try {
+    const {
+      withdrawFromAllContracts,
+      saveWithdrawalRecord,
+    } = await import('./lib/revenueRegistry');
+    const { getDeployerAddress } = await import('./lib/deployer');
+
+    const body = await c.req.json().catch(() => ({})) as { recipient?: string };
+
+    // Default to Fixr's wallet if no recipient specified
+    const recipient = body.recipient || getDeployerAddress(c.env);
+
+    const result = await withdrawFromAllContracts(recipient as `0x${string}`, c.env);
+
+    // Save records for successful withdrawals
+    for (const withdrawal of result.results) {
+      if (withdrawal.success && withdrawal.txHash && withdrawal.amountEth) {
+        await saveWithdrawalRecord({
+          contractId: withdrawal.contractId,
+          txHash: withdrawal.txHash,
+          amountEth: withdrawal.amountEth,
+          timestamp: new Date().toISOString(),
+          recipient: recipient as `0x${string}`,
+        }, c.env);
+      }
+    }
+
+    return c.json({
+      success: true,
+      ...result,
+    });
+  } catch (error) {
+    console.error('Revenue withdraw-all error:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Get withdrawal history
+app.get('/api/revenue/history', async (c) => {
+  try {
+    const { getAllWithdrawalHistory } = await import('./lib/revenueRegistry');
+
+    const limit = parseInt(c.req.query('limit') || '50');
+    const history = await getAllWithdrawalHistory(c.env, limit);
+
+    return c.json({
+      success: true,
+      withdrawals: history,
+      count: history.length,
+    });
+  } catch (error) {
+    console.error('Revenue history error:', error);
+    return c.json({ error: String(error) }, 500);
+  }
+});
+
+// Get history for specific contract
+app.get('/api/revenue/history/:contractId', async (c) => {
+  try {
+    const { getWithdrawalHistory } = await import('./lib/revenueRegistry');
+
+    const contractId = c.req.param('contractId');
+    const limit = parseInt(c.req.query('limit') || '20');
+    const history = await getWithdrawalHistory(contractId, c.env, limit);
+
+    return c.json({
+      success: true,
+      contractId,
+      withdrawals: history,
+      count: history.length,
+    });
+  } catch (error) {
+    console.error('Revenue contract history error:', error);
+    return c.json({ error: String(error) }, 500);
   }
 });
 
@@ -3896,6 +4630,33 @@ If it's just a comment, respond appropriately. Keep responses focused and techni
   }
 });
 
+// Create a GitHub issue
+app.post('/api/github/issue', async (c) => {
+  try {
+    const { createIssue } = await import('./lib/github');
+    const { owner, repo, title, body, labels } = await c.req.json();
+
+    if (!owner || !repo || !title || !body) {
+      return c.json({ success: false, error: 'Missing required fields: owner, repo, title, body' }, 400);
+    }
+
+    const result = await createIssue(c.env, owner, repo, title, body, labels);
+
+    if (!result.success) {
+      return c.json({ success: false, error: result.error }, 500);
+    }
+
+    return c.json({
+      success: true,
+      issueUrl: result.issueUrl,
+      issueNumber: result.issueNumber,
+    });
+  } catch (error) {
+    console.error('GitHub issue creation error:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
 // ============ Ship Tracker API ============
 
 // Get ships with filtering
@@ -4004,6 +4765,235 @@ app.post('/api/ships/cleanup', async (c) => {
     return c.json({ success: true, ...result });
   } catch (error) {
     console.error('Cleanup error:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// ============ Molty.pics API ============
+// Instagram for AI agents - image posting and social features
+
+// Get bot status
+app.get('/api/moltypics/status', async (c) => {
+  try {
+    const { getBotStatus } = await import('./lib/moltypics');
+    const status = await getBotStatus(c.env);
+    return c.json({ success: true, ...status });
+  } catch (error) {
+    console.error('MoltyPics status error:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Generate AI image and post
+app.post('/api/moltypics/generate', async (c) => {
+  try {
+    const { generateAndPost } = await import('./lib/moltypics');
+    const { prompt, caption } = await c.req.json();
+
+    if (!prompt) {
+      return c.json({ success: false, error: 'prompt is required' }, 400);
+    }
+
+    const result = await generateAndPost(c.env, prompt, caption);
+    return c.json(result);
+  } catch (error) {
+    console.error('MoltyPics generate error:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Post text-only caption
+app.post('/api/moltypics/post', async (c) => {
+  try {
+    const { postCaption } = await import('./lib/moltypics');
+    const { caption } = await c.req.json();
+
+    if (!caption) {
+      return c.json({ success: false, error: 'caption is required' }, 400);
+    }
+
+    const result = await postCaption(c.env, caption);
+    return c.json(result);
+  } catch (error) {
+    console.error('MoltyPics post error:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Get feed
+app.get('/api/moltypics/feed', async (c) => {
+  try {
+    const { getFeed } = await import('./lib/moltypics');
+    const sort = c.req.query('sort') as 'newest' | 'oldest' | 'mostLiked' || 'newest';
+    const limit = parseInt(c.req.query('limit') || '20');
+    const posts = await getFeed(sort, limit);
+    return c.json({ success: true, count: posts.length, posts });
+  } catch (error) {
+    console.error('MoltyPics feed error:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Get platform stats
+app.get('/api/moltypics/stats', async (c) => {
+  try {
+    const { getStats } = await import('./lib/moltypics');
+    const stats = await getStats();
+    return c.json({ success: true, ...stats });
+  } catch (error) {
+    console.error('MoltyPics stats error:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Like a post
+app.post('/api/moltypics/like/:postId', async (c) => {
+  try {
+    const { likePost } = await import('./lib/moltypics');
+    const postId = c.req.param('postId');
+    const success = await likePost(c.env, postId);
+    return c.json({ success });
+  } catch (error) {
+    console.error('MoltyPics like error:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Comment on a post
+app.post('/api/moltypics/comment/:postId', async (c) => {
+  try {
+    const { commentOnPost } = await import('./lib/moltypics');
+    const postId = c.req.param('postId');
+    const { content } = await c.req.json();
+
+    if (!content) {
+      return c.json({ success: false, error: 'content is required' }, 400);
+    }
+
+    const success = await commentOnPost(c.env, postId, content);
+    return c.json({ success });
+  } catch (error) {
+    console.error('MoltyPics comment error:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Follow a bot
+app.post('/api/moltypics/follow/:handle', async (c) => {
+  try {
+    const { followBot } = await import('./lib/moltypics');
+    const handle = c.req.param('handle');
+    const success = await followBot(c.env, handle);
+    return c.json({ success });
+  } catch (error) {
+    console.error('MoltyPics follow error:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Unfollow a bot
+app.delete('/api/moltypics/follow/:handle', async (c) => {
+  try {
+    const { unfollowBot } = await import('./lib/moltypics');
+    const handle = c.req.param('handle');
+    const success = await unfollowBot(c.env, handle);
+    return c.json({ success });
+  } catch (error) {
+    console.error('MoltyPics unfollow error:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Get followers
+app.get('/api/moltypics/followers', async (c) => {
+  try {
+    const { getFollowers } = await import('./lib/moltypics');
+    const followers = await getFollowers(c.env);
+    return c.json({ success: true, count: followers.length, followers });
+  } catch (error) {
+    console.error('MoltyPics followers error:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Get following
+app.get('/api/moltypics/following', async (c) => {
+  try {
+    const { getFollowing } = await import('./lib/moltypics');
+    const following = await getFollowing(c.env);
+    return c.json({ success: true, count: following.length, following });
+  } catch (error) {
+    console.error('MoltyPics following error:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Get bot profile
+app.get('/api/moltypics/profile/:handle', async (c) => {
+  try {
+    const { getBotProfile } = await import('./lib/moltypics');
+    const handle = c.req.param('handle');
+    const profile = await getBotProfile(handle);
+    if (!profile) {
+      return c.json({ success: false, error: 'Profile not found' }, 404);
+    }
+    return c.json({ success: true, profile });
+  } catch (error) {
+    console.error('MoltyPics profile error:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Get Fixr's posts
+app.get('/api/moltypics/posts', async (c) => {
+  try {
+    const { getMyPosts } = await import('./lib/moltypics');
+    const posts = await getMyPosts(c.env, 'fixr');
+    return c.json({ success: true, count: posts.length, posts });
+  } catch (error) {
+    console.error('MoltyPics posts error:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Manually trigger engagement cron
+app.post('/api/moltypics/engage', async (c) => {
+  try {
+    const { runEngagementCron, engageWithFeed } = await import('./lib/moltypics');
+
+    // Run main engagement
+    const engagementResult = await runEngagementCron(c.env);
+
+    // Engage with feed (prioritizes builder content)
+    const feedResult = await engageWithFeed(c.env, 10);
+
+    return c.json({
+      success: true,
+      engagement: {
+        followedBack: engagementResult.followedBack,
+        respondedTo: engagementResult.respondedTo,
+        errors: engagementResult.errors,
+      },
+      feed: feedResult,
+    });
+  } catch (error) {
+    console.error('MoltyPics engage error:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Search and engage with builder content specifically
+app.post('/api/moltypics/engage/builders', async (c) => {
+  try {
+    const { engageWithBuilderContent } = await import('./lib/moltypics');
+    const result = await engageWithBuilderContent(c.env);
+    return c.json({
+      success: true,
+      liked: result.liked,
+      posts: result.posts,
+    });
+  } catch (error) {
+    console.error('MoltyPics builder engage error:', error);
     return c.json({ success: false, error: String(error) }, 500);
   }
 });
@@ -4367,6 +5357,368 @@ app.get('/api/agent/avatar', async (c) => {
     headers: { 'Content-Type': 'image/svg+xml' },
   });
 });
+
+// ============ Public API with x402 Payments ============
+// These endpoints are available publicly with rate limiting based on FIXR staking or x402 payments
+
+// Access tier check
+app.get('/api/access/tier', getAccessTier);
+
+// x402 payment info
+app.get('/api/access/payment', getPaymentInfo);
+
+// Create a group for public API endpoints with middleware
+const publicApi = new Hono<{ Bindings: Env }>();
+publicApi.use('*', publicApiMiddleware);
+
+// POST /api/v1/security/audit - Smart contract security audit
+publicApi.post('/security/audit', async (c) => {
+  try {
+    const { analyzeContract } = await import('./lib/conversation');
+    const { address, network = 'base' } = await c.req.json();
+
+    if (!address || !address.match(/^0x[a-fA-F0-9]{40}$/)) {
+      return c.json({ success: false, error: 'Valid contract address required' }, 400);
+    }
+
+    console.log(`[PublicAPI] Security audit for ${address} on ${network}`);
+    const analysis = await analyzeContract(network, address);
+
+    return c.json({
+      success: true,
+      audit: {
+        address,
+        network,
+        ...analysis,
+      },
+    });
+  } catch (error) {
+    console.error('Security audit error:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// POST /api/v1/wallet/intel - Wallet intelligence and risk scoring
+publicApi.post('/wallet/intel', async (c) => {
+  try {
+    const { getWalletIntelligence } = await import('./lib/walletIntel');
+    const { address, network = 'base' } = await c.req.json();
+
+    if (!address || !address.match(/^0x[a-fA-F0-9]{40}$/)) {
+      return c.json({ success: false, error: 'Valid wallet address required' }, 400);
+    }
+
+    console.log(`[PublicAPI] Wallet intel for ${address}`);
+    const intel = await getWalletIntelligence(c.env, address, network);
+
+    return c.json({
+      success: true,
+      wallet: address,
+      intel,
+    });
+  } catch (error) {
+    console.error('Wallet intel error:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// GET /api/v1/rug/detect/:address - Rug detection for token
+publicApi.get('/rug/detect/:address', async (c) => {
+  try {
+    const { checkTokenForRug } = await import('./lib/rugDetection');
+    const address = c.req.param('address');
+    const network = c.req.query('network') || 'base';
+
+    if (!address || !address.match(/^0x[a-fA-F0-9]{40}$/)) {
+      return c.json({ success: false, error: 'Valid token address required' }, 400);
+    }
+
+    console.log(`[PublicAPI] Rug detection for ${address}`);
+    const result = await checkTokenForRug(c.env, address, network);
+
+    return c.json({
+      success: true,
+      token: address,
+      network,
+      ...result,
+    });
+  } catch (error) {
+    console.error('Rug detection error:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// GET /api/v1/rug/recent - Recent rug incidents
+publicApi.get('/rug/recent', async (c) => {
+  try {
+    const limit = Math.min(parseInt(c.req.query('limit') || '20'), 50);
+    const incidents = await getRecentIncidents(c.env, limit);
+
+    return c.json({
+      success: true,
+      incidents,
+      count: incidents.length,
+    });
+  } catch (error) {
+    console.error('Recent incidents error:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// POST /api/v1/generate/image - AI image generation
+publicApi.post('/generate/image', async (c) => {
+  try {
+    const { generateImage } = await import('./lib/gemini');
+    const { prompt, style } = await c.req.json();
+
+    if (!prompt) {
+      return c.json({ success: false, error: 'Prompt is required' }, 400);
+    }
+
+    console.log(`[PublicAPI] Image generation: ${prompt.slice(0, 50)}...`);
+    const result = await generateImage(c.env, prompt, style);
+
+    return c.json(result);
+  } catch (error) {
+    console.error('Image generation error:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// POST /api/v1/generate/video - AI video generation
+publicApi.post('/generate/video', async (c) => {
+  try {
+    const { generateVideoFromText } = await import('./lib/wavespeed');
+    const { prompt, duration = 5, sound = true, aspectRatio = '16:9' } = await c.req.json();
+
+    if (!prompt) {
+      return c.json({ success: false, error: 'Prompt is required' }, 400);
+    }
+
+    console.log(`[PublicAPI] Video generation: ${prompt.slice(0, 50)}...`);
+    const result = await generateVideoFromText(c.env, { prompt, duration, sound, aspectRatio });
+
+    return c.json(result);
+  } catch (error) {
+    console.error('Video generation error:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// GET /api/v1/reputation/ethos/:fid - Ethos reputation score
+publicApi.get('/reputation/ethos/:fid', async (c) => {
+  try {
+    const { getEthosScoreByFid } = await import('./lib/ethos');
+    const fid = parseInt(c.req.param('fid'));
+
+    if (!fid || isNaN(fid)) {
+      return c.json({ success: false, error: 'Valid FID required' }, 400);
+    }
+
+    console.log(`[PublicAPI] Ethos score for FID ${fid}`);
+    const score = await getEthosScoreByFid(fid);
+
+    return c.json({
+      success: true,
+      fid,
+      ethos: score,
+    });
+  } catch (error) {
+    console.error('Ethos score error:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// GET /api/v1/reputation/talent/:wallet - Talent Protocol score
+publicApi.get('/reputation/talent/:wallet', async (c) => {
+  try {
+    const { getPassportByWallet, getTalentAnalysis } = await import('./lib/talentprotocol');
+    const wallet = c.req.param('wallet');
+
+    if (!wallet || !wallet.match(/^0x[a-fA-F0-9]{40}$/)) {
+      return c.json({ success: false, error: 'Valid wallet address required' }, 400);
+    }
+
+    console.log(`[PublicAPI] Talent Protocol score for ${wallet}`);
+    const [passport, analysis] = await Promise.all([
+      getPassportByWallet(c.env, wallet),
+      getTalentAnalysis(c.env, wallet),
+    ]);
+
+    return c.json({
+      success: true,
+      wallet,
+      passport,
+      analysis,
+    });
+  } catch (error) {
+    console.error('Talent score error:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// POST /api/v1/github/analyze - GitHub repository analysis
+publicApi.post('/github/analyze', async (c) => {
+  try {
+    const { analyzeRepository } = await import('./lib/conversation');
+    const { owner, repo, branch = 'main' } = await c.req.json();
+
+    if (!owner || !repo) {
+      return c.json({ success: false, error: 'Owner and repo are required' }, 400);
+    }
+
+    console.log(`[PublicAPI] GitHub analysis for ${owner}/${repo}`);
+    const analysis = await analyzeRepository(c.env, owner, repo, branch);
+
+    return c.json({
+      success: true,
+      repository: `${owner}/${repo}`,
+      branch,
+      analysis,
+    });
+  } catch (error) {
+    console.error('GitHub analysis error:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// GET /api/v1/sentiment/:symbol - Farcaster sentiment analysis
+publicApi.get('/sentiment/:symbol', async (c) => {
+  try {
+    const { getFarcasterSentiment, checkBankrMentions } = await import('./lib/tokenReport');
+    const symbol = c.req.param('symbol');
+
+    if (!symbol) {
+      return c.json({ success: false, error: 'Token symbol required' }, 400);
+    }
+
+    console.log(`[PublicAPI] Sentiment analysis for $${symbol}`);
+    const [sentiment, bankr] = await Promise.all([
+      getFarcasterSentiment(c.env, symbol),
+      checkBankrMentions(c.env, symbol),
+    ]);
+
+    return c.json({
+      success: true,
+      symbol,
+      sentiment,
+      bankrMentions: bankr,
+    });
+  } catch (error) {
+    console.error('Sentiment analysis error:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// POST /api/v1/token/analyze - Comprehensive token analysis (public API version)
+publicApi.post('/token/analyze', async (c) => {
+  try {
+    const { generateComprehensiveReport, formatReportShort, formatReportLong } = await import('./lib/tokenReport');
+    const { address, network = 'base', format = 'full' } = await c.req.json();
+
+    if (!address) {
+      return c.json({ success: false, error: 'Token address is required' }, 400);
+    }
+
+    console.log(`[PublicAPI] Token analysis for ${address} on ${network}`);
+    const report = await generateComprehensiveReport(c.env, address, network);
+
+    return c.json({
+      success: true,
+      report,
+      formatted: format === 'short' ? formatReportShort(report) : formatReportLong(report),
+    });
+  } catch (error) {
+    console.error('Token analysis error:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// GET /api/v1/builder/:id - Builder profile
+publicApi.get('/builder/:id', async (c) => {
+  try {
+    const id = c.req.param('id');
+
+    // Check if it's a FID (number) or username
+    const isNumeric = /^\d+$/.test(id);
+
+    let profile;
+    if (isNumeric) {
+      profile = await getBuilderProfile(c.env, parseInt(id));
+    } else {
+      profile = await getBuilderByUsername(c.env, id);
+    }
+
+    if (!profile) {
+      return c.json({ success: false, error: 'Builder not found' }, 404);
+    }
+
+    return c.json({
+      success: true,
+      builder: profile,
+    });
+  } catch (error) {
+    console.error('Builder profile error:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// GET /api/v1/builders/top - Top builders
+publicApi.get('/builders/top', async (c) => {
+  try {
+    const limit = Math.min(parseInt(c.req.query('limit') || '20'), 50);
+    const period = c.req.query('period') || '7d';
+
+    const builders = await getTopBuilders(c.env, limit, period);
+
+    return c.json({
+      success: true,
+      period,
+      builders,
+      count: builders.length,
+    });
+  } catch (error) {
+    console.error('Top builders error:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// GET /api/v1/ships/recent - Recent shipped projects
+publicApi.get('/ships/recent', async (c) => {
+  try {
+    const limit = Math.min(parseInt(c.req.query('limit') || '20'), 50);
+    const ships = await getShips(c.env, { limit });
+
+    return c.json({
+      success: true,
+      ships,
+      count: ships.length,
+    });
+  } catch (error) {
+    console.error('Recent ships error:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// GET /api/v1/trending/topics - Trending topics
+publicApi.get('/trending/topics', async (c) => {
+  try {
+    const limit = Math.min(parseInt(c.req.query('limit') || '10'), 20);
+    const topics = await getTrendingTopics(c.env, limit);
+
+    return c.json({
+      success: true,
+      topics,
+      count: topics.length,
+    });
+  } catch (error) {
+    console.error('Trending topics error:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Mount public API at /api/v1
+app.route('/api/v1', publicApi);
 
 // ============ WaveSpeedAI Video Generation ============
 
@@ -5340,47 +6692,58 @@ async function handleCron(env: Env, scheduledTime: number): Promise<void> {
   // Every 2 days at 13:00 UTC (8 AM ET / 6 AM MT): Create and post Zora Coin
   const zoraDayOfYear = Math.floor((Date.now() - new Date(now.getFullYear(), 0, 0).getTime()) / 86400000);
   if (zoraDayOfYear % 2 === 0 && hour === 13 && minute === 0 && config.zora_coin_enabled) {
-    console.log('Running Zora Coin creation cron (every 2 days)...');
-    try {
-      const { createZoraPost, saveZoraPost } = await import('./lib/zora');
-      const result = await createZoraPost(env);
+    // Check if we already posted a Zora coin today (prevents duplicates)
+    const alreadyPostedZora = await hasPostedToday(env, 'zora_coin');
+    if (alreadyPostedZora) {
+      console.log('Zora Coin already posted today, skipping');
+    } else {
+      console.log('Running Zora Coin creation cron (every 2 days)...');
+      try {
+        const { createZoraPost, saveZoraPost } = await import('./lib/zora');
+        const result = await createZoraPost(env);
 
-      if (result.success && result.result?.coinAddress && result.result.metadata) {
-        // Save to database
-        await saveZoraPost(env, {
-          coinAddress: result.result.coinAddress,
-          txHash: result.result.txHash || '',
-          title: result.result.metadata.name,
-          description: result.result.metadata.description,
-          symbol: result.result.metadata.symbol,
-          imageUrl: result.result.metadata.imageUrl,
-          ipfsImageUrl: result.result.metadata.ipfsImageUrl || '',
-          ipfsMetadataUrl: result.result.metadata.ipfsMetadataUrl || '',
-          zoraUrl: result.result.zoraUrl || '',
-        });
+        if (result.success && result.result?.coinAddress && result.result.metadata) {
+          // Save to database
+          await saveZoraPost(env, {
+            coinAddress: result.result.coinAddress,
+            txHash: result.result.txHash || '',
+            title: result.result.metadata.name,
+            description: result.result.metadata.description,
+            symbol: result.result.metadata.symbol,
+            imageUrl: result.result.metadata.imageUrl,
+            ipfsImageUrl: result.result.metadata.ipfsImageUrl || '',
+            ipfsMetadataUrl: result.result.metadata.ipfsMetadataUrl || '',
+            zoraUrl: result.result.zoraUrl || '',
+          });
 
-        console.log('Zora Coin created successfully:', {
-          coinAddress: result.result.coinAddress,
-          symbol: result.result.metadata.symbol,
-          txHash: result.result.txHash,
-          title: result.result.metadata.name,
-          zoraUrl: result.result.zoraUrl,
-        });
+          console.log('Zora Coin created successfully:', {
+            coinAddress: result.result.coinAddress,
+            symbol: result.result.metadata.symbol,
+            txHash: result.result.txHash,
+            title: result.result.metadata.name,
+            zoraUrl: result.result.zoraUrl,
+          });
 
-        // Post to Farcaster about the new coin
-        try {
-          const castText = `🪙 New Zora Coin just dropped\n\n$${result.result.metadata.symbol} - "${result.result.metadata.name}"\n\n${result.concept?.description || ''}\n\n${result.result.zoraUrl}`;
-          const { postToFarcaster } = await import('./lib/social');
-          await postToFarcaster(env, castText);
-          console.log('Posted Zora Coin announcement to Farcaster');
-        } catch (postError) {
-          console.error('Failed to post Zora announcement:', postError);
+          // Post to Farcaster about the new coin
+          try {
+            const castText = `🪙 New Zora Coin just dropped\n\n$${result.result.metadata.symbol} - "${result.result.metadata.name}"\n\n${result.concept?.description || ''}\n\n${result.result.zoraUrl}`;
+            const { postToFarcaster } = await import('./lib/social');
+            const postResult = await postToFarcaster(env, castText);
+            console.log('Posted Zora Coin announcement to Farcaster');
+
+            // Record that we posted today (prevents duplicates)
+            if (postResult.success && postResult.postId) {
+              await recordDailyPost(env, 'zora_coin', postResult.postId);
+            }
+          } catch (postError) {
+            console.error('Failed to post Zora announcement:', postError);
+          }
+        } else {
+          console.error('Zora Coin creation failed:', result.error);
         }
-      } else {
-        console.error('Zora Coin creation failed:', result.error);
+      } catch (error) {
+        console.error('Zora cron error:', error);
       }
-    } catch (error) {
-      console.error('Zora cron error:', error);
     }
   }
 
@@ -5428,50 +6791,72 @@ async function handleCron(env: Env, scheduledTime: number): Promise<void> {
 
   // Daily at 15:00 UTC (10 AM MT / 11 AM ET): Trading discussion - two questions then decide
   if (hour === 15 && minute === 0 && config.trading_enabled) {
-    console.log('Running daily trading discussion...');
-    try {
-      const { runDailyTradingDiscussion, postTradingUpdate } = await import('./lib/trading');
-      const { isBankrConfigured } = await import('./lib/bankr');
+    // Check if we already posted trading discussion today (prevents duplicates)
+    const alreadyPostedTrading = await hasPostedToday(env, 'trading_discussion');
+    if (alreadyPostedTrading) {
+      console.log('Trading discussion already posted today, skipping');
+    } else {
+      console.log('Running daily trading discussion...');
+      try {
+        const { runDailyTradingDiscussion, postTradingUpdate } = await import('./lib/trading');
+        const { isBankrConfigured } = await import('./lib/bankr');
 
-      if (isBankrConfigured(env)) {
-        const result = await runDailyTradingDiscussion(env);
-        console.log('Trading discussion result:', {
-          success: result.success,
-          decision: result.decision,
-          traded: result.trade?.success || false,
-        });
+        if (isBankrConfigured(env)) {
+          const result = await runDailyTradingDiscussion(env);
+          console.log('Trading discussion result:', {
+            success: result.success,
+            decision: result.decision,
+            traded: result.trade?.success || false,
+          });
 
-        // Post about it if successful
-        if (result.success) {
-          const postResult = await postTradingUpdate(env, result);
-          console.log('Trading post result:', postResult);
+          // Post about it if successful
+          if (result.success) {
+            const postResult = await postTradingUpdate(env, result);
+            console.log('Trading post result:', postResult);
+
+            // Record that we posted today (prevents duplicates)
+            if (postResult?.success && postResult?.hash) {
+              await recordDailyPost(env, 'trading_discussion', postResult.hash);
+            }
+          }
+        } else {
+          console.log('Skipping trading discussion - BANKR_API_KEY not configured');
         }
-      } else {
-        console.log('Skipping trading discussion - BANKR_API_KEY not configured');
+      } catch (error) {
+        console.error('Trading discussion error:', error);
       }
-    } catch (error) {
-      console.error('Trading discussion error:', error);
     }
   }
 
   // Daily at 20:00 UTC (3 PM ET / 1 PM MT): Autonomous brainstorming session
   if (hour === 20 && minute === 0 && config.brainstorm_enabled) {
-    console.log('Running daily brainstorm cron...');
-    try {
-      const result = await runDailyBrainstorm(env, { postToSocial: true });
-      console.log('Brainstorm result:', {
-        success: result.success,
-        proposalsGenerated: result.proposals?.length || 0,
-        postHash: result.postHash,
-      });
+    // Check if we already posted brainstorm today (prevents duplicates)
+    const alreadyPostedBrainstorm = await hasPostedToday(env, 'brainstorm');
+    if (alreadyPostedBrainstorm) {
+      console.log('Brainstorm already posted today, skipping');
+    } else {
+      console.log('Running daily brainstorm cron...');
+      try {
+        const result = await runDailyBrainstorm(env, { postToSocial: true });
+        console.log('Brainstorm result:', {
+          success: result.success,
+          proposalsGenerated: result.proposals?.length || 0,
+          postHash: result.postHash,
+        });
 
-      // Send email digest if proposals were generated
-      if (result.success && result.proposals && result.proposals.length > 0) {
-        const digestResult = await sendProposalDigest(env);
-        console.log('Proposal digest email:', digestResult);
+        // Record that we posted today (prevents duplicates)
+        if (result.success && result.postHash) {
+          await recordDailyPost(env, 'brainstorm', result.postHash);
+        }
+
+        // Send email digest if proposals were generated
+        if (result.success && result.proposals && result.proposals.length > 0) {
+          const digestResult = await sendProposalDigest(env);
+          console.log('Proposal digest email:', digestResult);
+        }
+      } catch (error) {
+        console.error('Brainstorm error:', error);
       }
-    } catch (error) {
-      console.error('Brainstorm error:', error);
     }
   }
 
@@ -5627,6 +7012,29 @@ async function handleCron(env: Env, scheduledTime: number): Promise<void> {
       }
     } catch (error) {
       console.error('Featured project notification error:', error);
+    }
+  }
+
+  // Every 4 hours (2, 6, 10, 14, 18, 22 UTC): Molty.pics engagement
+  // Follow back followers, respond to comments, engage with feed
+  if ((hour === 2 || hour === 6 || hour === 10 || hour === 14 || hour === 18 || hour === 22) && minute === 0) {
+    console.log('Running Molty.pics engagement cron...');
+    try {
+      const { runEngagementCron, engageWithFeed } = await import('./lib/moltypics');
+
+      // Run main engagement (follow backs, comment responses)
+      const engagementResult = await runEngagementCron(env);
+      console.log('Molty.pics engagement result:', {
+        followedBack: engagementResult.followedBack.length,
+        respondedTo: engagementResult.respondedTo,
+        errors: engagementResult.errors.length,
+      });
+
+      // Also engage with the feed (like posts from other bots)
+      const feedResult = await engageWithFeed(env, 5);
+      console.log('Molty.pics feed engagement:', feedResult);
+    } catch (error) {
+      console.error('Molty.pics engagement error:', error);
     }
   }
 }

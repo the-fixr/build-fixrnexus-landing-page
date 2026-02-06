@@ -750,6 +750,262 @@ Content-Type: application/json
           </div>
         </div>
       </div>
+
+      <!-- v1 API - Security & Analysis -->
+      <div class="endpoint-group">
+        <div class="endpoint-group-title">Security & Analysis (v1 API)</div>
+
+        <div class="endpoint" onclick="this.classList.toggle('open')">
+          <div class="endpoint-header">
+            <span class="method post">POST</span>
+            <span class="endpoint-path">/api/v1/security/audit</span>
+            <span class="endpoint-desc">Smart contract security audit</span>
+          </div>
+          <div class="endpoint-body">
+            <div class="endpoint-section">
+              <div class="endpoint-section-title">Request</div>
+              <pre>POST /api/v1/security/audit
+Content-Type: application/json
+
+{ "address": "0xContractAddress", "network": "base" }</pre>
+            </div>
+            <div class="endpoint-section">
+              <div class="endpoint-section-title">Response</div>
+              <pre>{
+  "success": true,
+  "audit": {
+    "address": "0x...",
+    "network": "base",
+    "vulnerabilities": [...],
+    "riskScore": 25,
+    "suggestions": [...]
+  }
+}</pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="endpoint" onclick="this.classList.toggle('open')">
+          <div class="endpoint-header">
+            <span class="method post">POST</span>
+            <span class="endpoint-path">/api/v1/wallet/intel</span>
+            <span class="endpoint-desc">Wallet intelligence & risk</span>
+          </div>
+          <div class="endpoint-body">
+            <div class="endpoint-section">
+              <div class="endpoint-section-title">Request</div>
+              <pre>{ "address": "0xWalletAddress", "network": "base" }</pre>
+            </div>
+            <div class="endpoint-section">
+              <div class="endpoint-section-title">Response</div>
+              <pre>{
+  "success": true,
+  "wallet": "0x...",
+  "intel": {
+    "riskScore": 15,
+    "deployerHistory": [...],
+    "activityAnalysis": {...}
+  }
+}</pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="endpoint" onclick="this.classList.toggle('open')">
+          <div class="endpoint-header">
+            <span class="method get">GET</span>
+            <span class="endpoint-path">/api/v1/rug/detect/:address</span>
+            <span class="endpoint-desc">Real-time rug detection</span>
+          </div>
+          <div class="endpoint-body">
+            <div class="endpoint-section">
+              <div class="endpoint-section-title">Response</div>
+              <pre>{
+  "success": true,
+  "token": "0x...",
+  "isRug": false,
+  "riskLevel": "low",
+  "indicators": [...]
+}</pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="endpoint" onclick="this.classList.toggle('open')">
+          <div class="endpoint-header">
+            <span class="method get">GET</span>
+            <span class="endpoint-path">/api/v1/sentiment/:symbol</span>
+            <span class="endpoint-desc">Farcaster sentiment analysis</span>
+          </div>
+          <div class="endpoint-body">
+            <div class="endpoint-section">
+              <div class="endpoint-section-title">Response</div>
+              <pre>{
+  "success": true,
+  "symbol": "DEGEN",
+  "sentiment": "bullish",
+  "mentions": 156,
+  "bankrMentions": {...}
+}</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- v1 API - Reputation -->
+      <div class="endpoint-group">
+        <div class="endpoint-group-title">Reputation Scores (v1 API)</div>
+
+        <div class="endpoint" onclick="this.classList.toggle('open')">
+          <div class="endpoint-header">
+            <span class="method get">GET</span>
+            <span class="endpoint-path">/api/v1/reputation/ethos/:fid</span>
+            <span class="endpoint-desc">Ethos reputation score</span>
+          </div>
+          <div class="endpoint-body">
+            <div class="endpoint-section">
+              <div class="endpoint-section-title">Response</div>
+              <pre>{
+  "success": true,
+  "fid": 2574393,
+  "ethos": {
+    "score": 85,
+    "level": "high",
+    "factors": [...]
+  }
+}</pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="endpoint" onclick="this.classList.toggle('open')">
+          <div class="endpoint-header">
+            <span class="method get">GET</span>
+            <span class="endpoint-path">/api/v1/reputation/talent/:wallet</span>
+            <span class="endpoint-desc">Talent Protocol score</span>
+          </div>
+          <div class="endpoint-body">
+            <div class="endpoint-section">
+              <div class="endpoint-section-title">Response</div>
+              <pre>{
+  "success": true,
+  "wallet": "0x...",
+  "passport": {
+    "score": 72,
+    "credentials": [...]
+  },
+  "analysis": {...}
+}</pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="endpoint" onclick="this.classList.toggle('open')">
+          <div class="endpoint-header">
+            <span class="method get">GET</span>
+            <span class="endpoint-path">/api/v1/builder/:id</span>
+            <span class="endpoint-desc">Full builder profile</span>
+          </div>
+          <div class="endpoint-body">
+            <div class="endpoint-section">
+              <div class="endpoint-section-title">Response</div>
+              <pre>{
+  "success": true,
+  "builder": {
+    "fid": 123,
+    "username": "builder",
+    "ships": [...],
+    "reputation": {...}
+  }
+}</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- v1 API - AI Generation -->
+      <div class="endpoint-group">
+        <div class="endpoint-group-title">AI Generation (v1 API)</div>
+
+        <div class="endpoint" onclick="this.classList.toggle('open')">
+          <div class="endpoint-header">
+            <span class="method post">POST</span>
+            <span class="endpoint-path">/api/v1/generate/image</span>
+            <span class="endpoint-desc">AI image generation</span>
+          </div>
+          <div class="endpoint-body">
+            <div class="endpoint-section">
+              <div class="endpoint-section-title">Request</div>
+              <pre>{ "prompt": "futuristic city", "style": "cyberpunk" }</pre>
+            </div>
+            <div class="endpoint-section">
+              <div class="endpoint-section-title">Response</div>
+              <pre>{
+  "success": true,
+  "imageUrl": "https://...",
+  "mimeType": "image/png"
+}</pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="endpoint" onclick="this.classList.toggle('open')">
+          <div class="endpoint-header">
+            <span class="method post">POST</span>
+            <span class="endpoint-path">/api/v1/generate/video</span>
+            <span class="endpoint-desc">AI video generation</span>
+          </div>
+          <div class="endpoint-body">
+            <div class="endpoint-section">
+              <div class="endpoint-section-title">Request</div>
+              <pre>{
+  "prompt": "rocket launching into space",
+  "duration": 5,
+  "aspectRatio": "16:9"
+}</pre>
+            </div>
+            <div class="endpoint-section">
+              <div class="endpoint-section-title">Response</div>
+              <pre>{
+  "success": true,
+  "taskId": "...",
+  "status": "processing"
+}</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- v1 API - GitHub -->
+      <div class="endpoint-group">
+        <div class="endpoint-group-title">GitHub Analysis (v1 API)</div>
+
+        <div class="endpoint" onclick="this.classList.toggle('open')">
+          <div class="endpoint-header">
+            <span class="method post">POST</span>
+            <span class="endpoint-path">/api/v1/github/analyze</span>
+            <span class="endpoint-desc">Repository analysis</span>
+          </div>
+          <div class="endpoint-body">
+            <div class="endpoint-section">
+              <div class="endpoint-section-title">Request</div>
+              <pre>{ "owner": "the-fixr", "repo": "project", "branch": "main" }</pre>
+            </div>
+            <div class="endpoint-section">
+              <div class="endpoint-section-title">Response</div>
+              <pre>{
+  "success": true,
+  "repository": "the-fixr/project",
+  "analysis": {
+    "summary": "...",
+    "issues": [...],
+    "suggestions": [...]
+  }
+}</pre>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Contracts -->
