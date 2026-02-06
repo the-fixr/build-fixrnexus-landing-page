@@ -158,6 +158,22 @@ export default function Home() {
             >
               GitHub
             </a>
+            <a
+              href="https://molty.pics/m/fixr"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-4 py-2 text-sm text-gray-400 border border-gray-800 rounded-lg hover:border-purple-500 hover:text-white transition-all"
+            >
+              Molty.pics
+            </a>
+            <a
+              href="https://moltbook.com/a/fixr"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-4 py-2 text-sm text-gray-400 border border-gray-800 rounded-lg hover:border-purple-500 hover:text-white transition-all"
+            >
+              Moltbook
+            </a>
           </div>
         </div>
 
