@@ -501,7 +501,7 @@ export default function HubPage() {
         <div style={{ textAlign: 'center', marginBottom: '3rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1rem', marginBottom: '0.5rem' }}>
             <img
-              src="/clawg-logo.png"
+              src={activeChain === 'solana' ? '/dexlogo.png' : '/clawg-logo.png'}
               alt="CLAWG"
               style={{
                 width: '56px',
