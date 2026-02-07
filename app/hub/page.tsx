@@ -8,6 +8,7 @@ import { base } from 'wagmi/chains';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import { PublicKey, Transaction, LAMPORTS_PER_SOL } from '@solana/web3.js';
+import { NATIVE_MINT, getAssociatedTokenAddress, createAssociatedTokenAccountInstruction } from '@solana/spl-token';
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend
 } from 'recharts';
@@ -359,8 +360,19 @@ export default function HubPage() {
 
     setSolanaLoading(true);
     try {
+      const tx = new Transaction();
+
+      // Ensure user has WSOL ATA (needed for SOL rewards)
+      const wsolAta = await getAssociatedTokenAddress(NATIVE_MINT, publicKey);
+      const wsolAccount = await connection.getAccountInfo(wsolAta);
+      if (!wsolAccount) {
+        tx.add(createAssociatedTokenAccountInstruction(
+          publicKey, wsolAta, publicKey, NATIVE_MINT
+        ));
+      }
+
       const ix = await buildClaimRewardsInstruction(publicKey);
-      const tx = new Transaction().add(ix);
+      tx.add(ix);
       const sig = await sendTransaction(tx, connection);
       await connection.confirmTransaction(sig);
     } catch (err) {
@@ -393,8 +405,27 @@ export default function HubPage() {
   const totalPendingWeth = pendingWeth || BigInt(0);
   const totalPendingToken = pendingToken || BigInt(0);
 
-  const solanaPendingClawg = solanaUserAccount?.pendingRewards[0] || BigInt(0);
-  const solanaPendingWsol = solanaUserAccount?.pendingRewards[1] || BigInt(0);
+  // Calculate actual pending rewards (on-chain stored values only update on interaction)
+  const REWARD_PRECISION = BigInt(1_000_000_000_000); // 1e12, matches program
+  const solanaPendingClawg = useMemo(() => {
+    if (!solanaState || !solanaUserAccount) return BigInt(0);
+    const stored = solanaUserAccount.pendingRewards[0] || BigInt(0);
+    const globalRpt = solanaState.rewardPerTokenStored[0] || BigInt(0);
+    const userPaid = solanaUserAccount.rewardPerTokenPaid[0] || BigInt(0);
+    const weight = solanaUserAccount.totalWeightedStake;
+    if (globalRpt <= userPaid) return stored;
+    return stored + (weight * (globalRpt - userPaid)) / REWARD_PRECISION;
+  }, [solanaState, solanaUserAccount]);
+
+  const solanaPendingWsol = useMemo(() => {
+    if (!solanaState || !solanaUserAccount) return BigInt(0);
+    const stored = solanaUserAccount.pendingRewards[1] || BigInt(0);
+    const globalRpt = solanaState.rewardPerTokenStored[1] || BigInt(0);
+    const userPaid = solanaUserAccount.rewardPerTokenPaid[1] || BigInt(0);
+    const weight = solanaUserAccount.totalWeightedStake;
+    if (globalRpt <= userPaid) return stored;
+    return stored + (weight * (globalRpt - userPaid)) / REWARD_PRECISION;
+  }, [solanaState, solanaUserAccount]);
 
   const feeDistributionData = [
     { name: `Stakers (70%)`, value: 70, color: ACCENT },
@@ -551,7 +582,7 @@ export default function HubPage() {
         </div>
 
         {/* User Positions */}
-        {isWalletConnected && ((activeChain === 'base' && basePositions.length > 0) || (activeChain === 'solana' && solanaPositions.length > 0)) && (
+        {isWalletConnected && ((activeChain === 'base' && basePositions.length > 0) || (activeChain === 'solana' && (solanaPositions.length > 0 || solanaPendingClawg > BigInt(0) || solanaPendingWsol > BigInt(0)))) && (
           <div style={{ background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: '12px', padding: '1.5rem', marginBottom: '2rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
               <h3 style={{ fontSize: '0.9rem', color: '#666', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Your Positions</h3>

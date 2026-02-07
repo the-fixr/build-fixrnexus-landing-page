@@ -24,9 +24,9 @@ export const [WSOL_VAULT] = PublicKey.findProgramAddressSync(
 // Anchor discriminators (first 8 bytes of sha256("global:<instruction_name>"))
 const STAKE_DISCRIMINATOR = new Uint8Array([206, 176, 202, 18, 200, 209, 179, 108]);
 const UNSTAKE_DISCRIMINATOR = new Uint8Array([90, 95, 107, 42, 205, 124, 50, 225]);
-const CLAIM_ALL_REWARDS_DISCRIMINATOR = new Uint8Array([69, 165, 50, 225, 45, 19, 59, 164]);
-const DISTRIBUTE_CLAWG_DISCRIMINATOR = new Uint8Array([68, 57, 224, 253, 209, 220, 193, 176]);
-const DISTRIBUTE_SOL_DISCRIMINATOR = new Uint8Array([204, 134, 188, 73, 143, 213, 109, 127]);
+const CLAIM_ALL_REWARDS_DISCRIMINATOR = new Uint8Array([132, 203, 246, 173, 206, 240, 85, 120]);
+const DISTRIBUTE_CLAWG_DISCRIMINATOR = new Uint8Array([155, 179, 46, 190, 3, 87, 17, 55]);
+const DISTRIBUTE_SOL_DISCRIMINATOR = new Uint8Array([234, 85, 98, 176, 165, 8, 133, 95]);
 
 // Lock tiers (matching the contract)
 export const LOCK_TIERS = [
@@ -290,6 +290,54 @@ export async function buildClaimRewardsInstruction(
     ],
     programId: CLAWG_STAKING_PROGRAM_ID,
     data: Buffer.from(CLAIM_ALL_REWARDS_DISCRIMINATOR),
+  });
+}
+
+// Build distribute CLAWG fees instruction
+export async function buildDistributeClawgInstruction(
+  authority: PublicKey,
+  amount: bigint,
+): Promise<TransactionInstruction> {
+  const feeSource = await getAssociatedTokenAddress(CLAWG_MINT, authority);
+
+  // instruction data: discriminator (8) + amount (8)
+  const data = new Uint8Array(16);
+  data.set(DISTRIBUTE_CLAWG_DISCRIMINATOR, 0);
+  new DataView(data.buffer).setBigUint64(8, amount, true);
+
+  return new TransactionInstruction({
+    keys: [
+      { pubkey: STATE_PDA, isSigner: false, isWritable: true },
+      { pubkey: CLAWG_VAULT, isSigner: false, isWritable: true },
+      { pubkey: feeSource, isSigner: false, isWritable: true },
+      { pubkey: authority, isSigner: true, isWritable: true },
+      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+    ],
+    programId: CLAWG_STAKING_PROGRAM_ID,
+    data: Buffer.from(data),
+  });
+}
+
+// Build distribute SOL fees instruction
+export async function buildDistributeSolInstruction(
+  authority: PublicKey,
+  amount: bigint,
+): Promise<TransactionInstruction> {
+  // instruction data: discriminator (8) + amount (8)
+  const data = new Uint8Array(16);
+  data.set(DISTRIBUTE_SOL_DISCRIMINATOR, 0);
+  new DataView(data.buffer).setBigUint64(8, amount, true);
+
+  return new TransactionInstruction({
+    keys: [
+      { pubkey: STATE_PDA, isSigner: false, isWritable: true },
+      { pubkey: WSOL_VAULT, isSigner: false, isWritable: true },
+      { pubkey: authority, isSigner: true, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+    ],
+    programId: CLAWG_STAKING_PROGRAM_ID,
+    data: Buffer.from(data),
   });
 }
 
