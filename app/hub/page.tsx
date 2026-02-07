@@ -26,6 +26,7 @@ interface TokenConfig {
   stakersShare: number;
   treasuryShare: number;
   logoUrl?: string;
+  active: boolean;
 }
 
 const TOKENS: TokenConfig[] = [
@@ -41,6 +42,7 @@ const TOKENS: TokenConfig[] = [
     stakersShare: 70,
     treasuryShare: 30,
     logoUrl: '/clawg-logo.png',
+    active: true,
     tiers: [
       { name: '1 Day', multiplier: '0.5x', duration: 86400, index: 0 },
       { name: '7 Days', multiplier: '1.0x', duration: 604800, index: 1 },
@@ -62,6 +64,7 @@ const TOKENS: TokenConfig[] = [
     decimals: 18,
     stakersShare: 70,
     treasuryShare: 30,
+    active: false,
     tiers: [
       { name: '7 Days', multiplier: '1.0x', duration: 604800, index: 0 },
       { name: '30 Days', multiplier: '1.25x', duration: 2592000, index: 1 },
@@ -279,19 +282,23 @@ export default function HubPage() {
           {TOKENS.map((token) => (
             <button
               key={token.id}
-              onClick={() => setActiveToken(token.id)}
+              onClick={() => token.active && setActiveToken(token.id)}
+              disabled={!token.active}
               style={{
                 padding: '0.75rem 1.5rem',
-                border: `2px solid ${activeToken === token.id ? ACCENT : '#1a1a1a'}`,
+                border: `2px solid ${!token.active ? '#222' : activeToken === token.id ? ACCENT : '#1a1a1a'}`,
                 background: activeToken === token.id ? ACCENT_GLOW : 'transparent',
-                color: activeToken === token.id ? '#fff' : '#666',
+                color: !token.active ? '#333' : activeToken === token.id ? '#fff' : '#666',
                 fontWeight: 600,
-                cursor: 'pointer',
+                cursor: token.active ? 'pointer' : 'not-allowed',
                 fontFamily: 'inherit',
                 borderRadius: '6px',
+                opacity: token.active ? 1 : 0.5,
+                position: 'relative',
               }}
             >
               {token.symbol}
+              {!token.active && <span style={{ fontSize: '0.6rem', display: 'block', color: '#444' }}>SOON</span>}
             </button>
           ))}
         </div>
