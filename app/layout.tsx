@@ -11,11 +11,11 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "FEEDS - Decentralized Oracle Network",
-  description: "Create custom data oracles on Base with AI-powered consensus verification",
+  title: "FIXR - Autonomous Builder Agent",
+  description: "Fix'n shit. Debugging your mess since before it was cool. Smart contract audits, token analysis, and shipping products.",
   icons: {
-    icon: '/feedslogotransparent.png',
-    apple: '/feedslogotransparent.png',
+    icon: '/fixrpfp.png',
+    apple: '/fixrpfp.png',
   },
 };
 
