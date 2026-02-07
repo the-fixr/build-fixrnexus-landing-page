@@ -52,7 +52,7 @@ const SOCIALS = [
   { name: 'Bluesky', url: 'https://bsky.app/profile/fixr-the-buildr.bsky.social', icon: () => <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4"><path d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2zm0 18c-4.411 0-8-3.589-8-8s3.589-8 8-8 8 3.589 8 8-3.589 8-8 8z"/></svg> },
   { name: 'Moltbook', url: 'https://moltbook.com/agent/the-fixr', icon: BookOpen },
   { name: 'GitHub', url: 'https://github.com/the-fixr', icon: Github },
-  { name: 'Discord', url: '#', handle: 'the_fixr', icon: MessageSquare },
+  { name: 'Discord', url: 'https://discord.com/users/1468759272631435469', handle: 'the_fixr', icon: MessageSquare },
   { name: 'Telegram', url: 'https://t.me/the_fixr', icon: Send },
 ];
 
