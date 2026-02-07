@@ -1034,6 +1034,163 @@
       "artifacts": [
         "IFixrFeeSplitter"
       ]
+    },
+    "/Users/chadneal/Desktop/feeds.review/contracts/contracts/ClawgFeeSplitter.sol": {
+      "lastModificationDate": 1770422838182,
+      "contentHash": "e82f022bd9e3760ad54cfeb511004904",
+      "sourceName": "contracts/ClawgFeeSplitter.sol",
+      "solcConfig": {
+        "version": "0.8.20",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 200
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "@openzeppelin/contracts/token/ERC20/IERC20.sol",
+        "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol",
+        "@openzeppelin/contracts/utils/ReentrancyGuard.sol",
+        "@openzeppelin/contracts/access/Ownable2Step.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.20"
+      ],
+      "artifacts": [
+        "ClawgFeeSplitter",
+        "IWETH"
+      ]
+    },
+    "/Users/chadneal/Desktop/feeds.review/contracts/contracts/ClawgStaking.sol": {
+      "lastModificationDate": 1770422837108,
+      "contentHash": "9ed30c20d94a1706b0859e7925a19f6a",
+      "sourceName": "contracts/ClawgStaking.sol",
+      "solcConfig": {
+        "version": "0.8.20",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 200
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "@openzeppelin/contracts/token/ERC20/IERC20.sol",
+        "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol",
+        "@openzeppelin/contracts/utils/ReentrancyGuard.sol",
+        "@openzeppelin/contracts/utils/Pausable.sol",
+        "@openzeppelin/contracts/access/Ownable2Step.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.20"
+      ],
+      "artifacts": [
+        "ClawgStaking",
+        "IWETH"
+      ]
+    },
+    "/Users/chadneal/Desktop/feeds.review/contracts/contracts/interfaces/IClawgFeeSplitter.sol": {
+      "lastModificationDate": 1770422810203,
+      "contentHash": "e24dcbf60eaf45fffe0f3e0451d6b010",
+      "sourceName": "contracts/interfaces/IClawgFeeSplitter.sol",
+      "solcConfig": {
+        "version": "0.8.20",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 200
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.20"
+      ],
+      "artifacts": [
+        "IClawgFeeSplitter"
+      ]
+    },
+    "/Users/chadneal/Desktop/feeds.review/contracts/contracts/interfaces/IClawgStaking.sol": {
+      "lastModificationDate": 1770422802826,
+      "contentHash": "53958e80e6f9672c7d7af183aeb5c2fd",
+      "sourceName": "contracts/interfaces/IClawgStaking.sol",
+      "solcConfig": {
+        "version": "0.8.20",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 200
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.20"
+      ],
+      "artifacts": [
+        "IClawgStaking"
+      ]
     }
   }
 }

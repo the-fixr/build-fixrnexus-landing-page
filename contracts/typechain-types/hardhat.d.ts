@@ -78,6 +78,22 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.ReentrancyGuard__factory>;
     getContractFactory(
+      name: "ClawgFeeSplitter",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.ClawgFeeSplitter__factory>;
+    getContractFactory(
+      name: "IWETH",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.IWETH__factory>;
+    getContractFactory(
+      name: "ClawgStaking",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.ClawgStaking__factory>;
+    getContractFactory(
+      name: "IWETH",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.IWETH__factory>;
+    getContractFactory(
       name: "DummyToken",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.DummyToken__factory>;
@@ -97,6 +113,14 @@ declare module "hardhat/types/runtime" {
       name: "FixrStaking",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.FixrStaking__factory>;
+    getContractFactory(
+      name: "IClawgFeeSplitter",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.IClawgFeeSplitter__factory>;
+    getContractFactory(
+      name: "IClawgStaking",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.IClawgStaking__factory>;
     getContractFactory(
       name: "IFixrFeeSplitter",
       signerOrOptions?: ethers.Signer | FactoryOptions
@@ -203,6 +227,26 @@ declare module "hardhat/types/runtime" {
       signer?: ethers.Signer
     ): Promise<Contracts.ReentrancyGuard>;
     getContractAt(
+      name: "ClawgFeeSplitter",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.ClawgFeeSplitter>;
+    getContractAt(
+      name: "IWETH",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.IWETH>;
+    getContractAt(
+      name: "ClawgStaking",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.ClawgStaking>;
+    getContractAt(
+      name: "IWETH",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.IWETH>;
+    getContractAt(
       name: "DummyToken",
       address: string | ethers.Addressable,
       signer?: ethers.Signer
@@ -227,6 +271,16 @@ declare module "hardhat/types/runtime" {
       address: string | ethers.Addressable,
       signer?: ethers.Signer
     ): Promise<Contracts.FixrStaking>;
+    getContractAt(
+      name: "IClawgFeeSplitter",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.IClawgFeeSplitter>;
+    getContractAt(
+      name: "IClawgStaking",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.IClawgStaking>;
     getContractAt(
       name: "IFixrFeeSplitter",
       address: string | ethers.Addressable,
@@ -323,6 +377,22 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.ReentrancyGuard>;
     deployContract(
+      name: "ClawgFeeSplitter",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.ClawgFeeSplitter>;
+    deployContract(
+      name: "IWETH",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.IWETH>;
+    deployContract(
+      name: "ClawgStaking",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.ClawgStaking>;
+    deployContract(
+      name: "IWETH",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.IWETH>;
+    deployContract(
       name: "DummyToken",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.DummyToken>;
@@ -342,6 +412,14 @@ declare module "hardhat/types/runtime" {
       name: "FixrStaking",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.FixrStaking>;
+    deployContract(
+      name: "IClawgFeeSplitter",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.IClawgFeeSplitter>;
+    deployContract(
+      name: "IClawgStaking",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.IClawgStaking>;
     deployContract(
       name: "IFixrFeeSplitter",
       signerOrOptions?: ethers.Signer | DeployContractOptions
@@ -448,6 +526,26 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.ReentrancyGuard>;
     deployContract(
+      name: "ClawgFeeSplitter",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.ClawgFeeSplitter>;
+    deployContract(
+      name: "IWETH",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.IWETH>;
+    deployContract(
+      name: "ClawgStaking",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.ClawgStaking>;
+    deployContract(
+      name: "IWETH",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.IWETH>;
+    deployContract(
       name: "DummyToken",
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
@@ -472,6 +570,16 @@ declare module "hardhat/types/runtime" {
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.FixrStaking>;
+    deployContract(
+      name: "IClawgFeeSplitter",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.IClawgFeeSplitter>;
+    deployContract(
+      name: "IClawgStaking",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.IClawgStaking>;
     deployContract(
       name: "IFixrFeeSplitter",
       args: any[],
