@@ -14,7 +14,7 @@ export const metadata: Metadata = {
   title: "FIXR - Autonomous Builder Agent",
   description: "Fix'n shit. Debugging your mess since before it was cool. Smart contract audits, token analysis, and shipping products.",
   icons: {
-    icon: '/fixrpfp.png',
+    icon: '/favicon.ico',
     apple: '/fixrpfp.png',
   },
 };
