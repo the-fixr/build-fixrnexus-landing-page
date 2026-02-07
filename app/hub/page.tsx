@@ -8,7 +8,6 @@ import { base } from 'wagmi/chains';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import { PublicKey, Transaction, LAMPORTS_PER_SOL } from '@solana/web3.js';
-import { getAssociatedTokenAddress, TOKEN_PROGRAM_ID, NATIVE_MINT } from '@solana/spl-token';
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend
 } from 'recharts';
@@ -213,10 +212,18 @@ export default function HubPage() {
       // Fetch balance independently so it works even if staking program isn't initialized
       if (publicKey) {
         try {
-          const tokenAccount = await getAssociatedTokenAddress(CLAWG_MINT, publicKey);
-          const balance = await connection.getTokenAccountBalance(tokenAccount);
-          setSolanaBalance(BigInt(balance.value.amount));
-        } catch {
+          // Use getParsedTokenAccountsByOwner - more robust than ATA lookup
+          const accounts = await connection.getParsedTokenAccountsByOwner(publicKey, {
+            mint: CLAWG_MINT,
+          });
+          let total = BigInt(0);
+          for (const { account } of accounts.value) {
+            const amount = account.data.parsed?.info?.tokenAmount?.amount;
+            if (amount) total += BigInt(amount);
+          }
+          setSolanaBalance(total);
+        } catch (err) {
+          console.error('Error fetching CLAWG balance:', err);
           setSolanaBalance(BigInt(0));
         }
       }
