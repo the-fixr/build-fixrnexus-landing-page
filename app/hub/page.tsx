@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { useAccount, useBalance, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
-import { formatUnits, parseUnits } from 'viem';
+import { formatUnits, parseUnits, maxUint256 } from 'viem';
 import { base } from 'wagmi/chains';
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend
@@ -144,7 +144,7 @@ export default function HubPage() {
     query: { enabled: !!address },
   });
 
-  const { data: allowance } = useReadContract({
+  const { data: allowance, refetch: refetchAllowance } = useReadContract({
     address: currentToken.token,
     abi: ERC20_ABI,
     functionName: 'allowance',
@@ -158,10 +158,20 @@ export default function HubPage() {
   const { writeContract: unstake, data: unstakeHash } = useWriteContract();
   const { writeContract: claim, data: claimHash } = useWriteContract();
 
-  const { isLoading: isApproving } = useWaitForTransactionReceipt({ hash: approveHash });
+  const { isLoading: isApproving, isSuccess: approveSuccess } = useWaitForTransactionReceipt({ hash: approveHash });
   const { isLoading: isStaking } = useWaitForTransactionReceipt({ hash: stakeHash });
   const { isLoading: isUnstaking } = useWaitForTransactionReceipt({ hash: unstakeHash });
   const { isLoading: isClaiming } = useWaitForTransactionReceipt({ hash: claimHash });
+
+  useEffect(() => {
+    document.title = 'Fixr Token Hub';
+  }, []);
+
+  useEffect(() => {
+    if (approveSuccess) {
+      refetchAllowance();
+    }
+  }, [approveSuccess, refetchAllowance]);
 
   const formatNumber = (num: bigint | undefined, decimals = 18) => {
     if (!num) return '0';
@@ -197,7 +207,7 @@ export default function HubPage() {
       address: currentToken.token,
       abi: ERC20_ABI,
       functionName: 'approve',
-      args: [currentToken.staking, parseUnits(stakeAmount, currentToken.decimals)],
+      args: [currentToken.staking, maxUint256],
       chainId: base.id,
     });
   };
