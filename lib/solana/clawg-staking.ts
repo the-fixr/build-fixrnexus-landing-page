@@ -22,11 +22,11 @@ export const [WSOL_VAULT] = PublicKey.findProgramAddressSync(
 );
 
 // Anchor discriminators (first 8 bytes of sha256("global:<instruction_name>"))
-const STAKE_DISCRIMINATOR = Buffer.from([206, 176, 202, 18, 200, 209, 179, 108]);
-const UNSTAKE_DISCRIMINATOR = Buffer.from([90, 95, 107, 42, 205, 124, 50, 225]);
-const CLAIM_ALL_REWARDS_DISCRIMINATOR = Buffer.from([69, 165, 50, 225, 45, 19, 59, 164]);
-const DISTRIBUTE_CLAWG_DISCRIMINATOR = Buffer.from([68, 57, 224, 253, 209, 220, 193, 176]);
-const DISTRIBUTE_SOL_DISCRIMINATOR = Buffer.from([204, 134, 188, 73, 143, 213, 109, 127]);
+const STAKE_DISCRIMINATOR = new Uint8Array([206, 176, 202, 18, 200, 209, 179, 108]);
+const UNSTAKE_DISCRIMINATOR = new Uint8Array([90, 95, 107, 42, 205, 124, 50, 225]);
+const CLAIM_ALL_REWARDS_DISCRIMINATOR = new Uint8Array([69, 165, 50, 225, 45, 19, 59, 164]);
+const DISTRIBUTE_CLAWG_DISCRIMINATOR = new Uint8Array([68, 57, 224, 253, 209, 220, 193, 176]);
+const DISTRIBUTE_SOL_DISCRIMINATOR = new Uint8Array([204, 134, 188, 73, 143, 213, 109, 127]);
 
 // Lock tiers (matching the contract)
 export const LOCK_TIERS = [
@@ -222,10 +222,10 @@ export async function buildStakeInstruction(
   const userTokenAccount = await getAssociatedTokenAddress(CLAWG_MINT, user);
 
   // instruction data: discriminator (8) + amount (8) + tierIndex (1)
-  const data = Buffer.alloc(17);
-  STAKE_DISCRIMINATOR.copy(data, 0);
-  data.writeBigUInt64LE(amount, 8);
-  data.writeUInt8(tierIndex, 16);
+  const data = new Uint8Array(17);
+  data.set(STAKE_DISCRIMINATOR, 0);
+  new DataView(data.buffer).setBigUint64(8, amount, true);
+  data[16] = tierIndex;
 
   return new TransactionInstruction({
     keys: [
@@ -251,9 +251,9 @@ export async function buildUnstakeInstruction(
   const userTokenAccount = await getAssociatedTokenAddress(CLAWG_MINT, user);
 
   // instruction data: discriminator (8) + positionId (1)
-  const data = Buffer.alloc(9);
-  UNSTAKE_DISCRIMINATOR.copy(data, 0);
-  data.writeUInt8(positionId, 8);
+  const data = new Uint8Array(9);
+  data.set(UNSTAKE_DISCRIMINATOR, 0);
+  data[8] = positionId;
 
   return new TransactionInstruction({
     keys: [
