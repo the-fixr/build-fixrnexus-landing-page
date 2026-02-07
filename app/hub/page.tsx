@@ -83,7 +83,7 @@ const BASE_TOKENS: TokenConfig[] = [
     token: '0x8cBb89d67fDA00E26aEd0Fc02718821049b41610',
     staking: '0x39DbBa2CdAF7F668816957B023cbee1841373F5b',
     feeSplitter: '0x5bE1B904ce0Efbb2CC963aFd6E976f8F93AdC928',
-    description: 'FEEDS oracle network governance',
+    description: 'FIXR autonomous builder agent',
     decimals: 18,
     stakersShare: 70,
     treasuryShare: 30,

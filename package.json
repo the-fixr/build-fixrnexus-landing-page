@@ -10,7 +10,6 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.2",
-    "@cloudflare/workers-types": "^4.20260120.0",
     "@coral-xyz/anchor": "^0.32.1",
     "@metamask/jazzicon": "^2.0.0",
     "@rainbow-me/rainbowkit": "^2.2.10",
@@ -33,12 +32,10 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "recharts": "^3.6.0",
-    "resend": "^6.8.0",
     "three": "^0.182.0",
     "vercel": "^50.4.9",
     "viem": "^2.44.4",
-    "wagmi": "^2.19.5",
-    "wrangler": "^4.59.3"
+    "wagmi": "^2.19.5"
   },
   "devDependencies": {
     "@types/node": "^20",
