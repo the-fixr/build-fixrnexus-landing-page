@@ -202,6 +202,7 @@ export default function HubPage() {
   const [solanaState, setSolanaState] = useState<StakingState | null>(null);
   const [solanaUserAccount, setSolanaUserAccount] = useState<UserStakingAccount | null>(null);
   const [solanaBalance, setSolanaBalance] = useState<bigint>(BigInt(0));
+  const [solanaDecimals, setSolanaDecimals] = useState<number>(6);
   const [solanaLoading, setSolanaLoading] = useState(false);
 
   // Fetch Solana data
@@ -218,8 +219,9 @@ export default function HubPage() {
           });
           let total = BigInt(0);
           for (const { account } of accounts.value) {
-            const amount = account.data.parsed?.info?.tokenAmount?.amount;
-            if (amount) total += BigInt(amount);
+            const parsed = account.data.parsed?.info?.tokenAmount;
+            if (parsed?.amount) total += BigInt(parsed.amount);
+            if (parsed?.decimals !== undefined) setSolanaDecimals(parsed.decimals);
           }
           setSolanaBalance(total);
         } catch (err) {
@@ -340,7 +342,7 @@ export default function HubPage() {
 
     setSolanaLoading(true);
     try {
-      const amount = BigInt(Math.floor(parseFloat(stakeAmount) * 1e9));
+      const amount = BigInt(Math.floor(parseFloat(stakeAmount) * Math.pow(10, solanaDecimals)));
       const ix = await buildStakeInstruction(publicKey, amount, selectedTier);
       const tx = new Transaction().add(ix);
       const sig = await sendTransaction(tx, connection);
@@ -539,11 +541,11 @@ export default function HubPage() {
             </>
           ) : (
             <>
-              <StatCard label="TOTAL STAKED" value={formatNumber(solanaState?.totalStakedAmount, 9)} accent solana />
-              <StatCard label="WEIGHTED STAKE" value={formatNumber(solanaState?.totalWeightedStake, 9)} solana />
-              <StatCard label="YOUR BALANCE" value={formatNumber(solanaBalance, 9)} solana />
+              <StatCard label="TOTAL STAKED" value={formatNumber(solanaState?.totalStakedAmount, solanaDecimals)} accent solana />
+              <StatCard label="WEIGHTED STAKE" value={formatNumber(solanaState?.totalWeightedStake, solanaDecimals)} solana />
+              <StatCard label="YOUR BALANCE" value={formatNumber(solanaBalance, solanaDecimals)} solana />
               <StatCard label="PENDING WSOL" value={formatSol(solanaPendingWsol)} accent solana />
-              <StatCard label="PENDING CLAWG" value={formatNumber(solanaPendingClawg, 9)} accent solana />
+              <StatCard label="PENDING CLAWG" value={formatNumber(solanaPendingClawg, solanaDecimals)} accent solana />
             </>
           )}
         </div>
@@ -591,7 +593,7 @@ export default function HubPage() {
                   unlockAt={pos.unlockAt}
                   onUnstake={() => handleSolanaUnstake(i)}
                   isLoading={solanaLoading}
-                  decimals={9}
+                  decimals={solanaDecimals}
                   chain="solana"
                 />
               ))
@@ -632,7 +634,7 @@ export default function HubPage() {
                         if (activeChain === 'base' && tokenBalance) {
                           setStakeAmount(formatUnits(tokenBalance.value, currentToken.decimals));
                         } else if (activeChain === 'solana') {
-                          setStakeAmount((Number(solanaBalance) / 1e9).toString());
+                          setStakeAmount((Number(solanaBalance) / Math.pow(10, solanaDecimals)).toString());
                         }
                       }}
                       style={{ padding: '0.5rem 1rem', background: '#1a1a1a', border: 'none', color: '#666', cursor: 'pointer', fontFamily: 'inherit', fontSize: '0.75rem' }}
@@ -643,7 +645,7 @@ export default function HubPage() {
                   <p style={{ fontSize: '0.7rem', color: '#444', marginTop: '0.25rem' }}>
                     Balance: {activeChain === 'base'
                       ? (tokenBalance ? formatUnits(tokenBalance.value, currentToken.decimals) : '0')
-                      : (Number(solanaBalance) / 1e9).toFixed(2)
+                      : (Number(solanaBalance) / Math.pow(10, solanaDecimals)).toFixed(2)
                     }
                   </p>
                 </div>
