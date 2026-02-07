@@ -341,11 +341,12 @@ export default function HubPage() {
           </p>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '2rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '1rem', marginBottom: '2rem' }}>
           <StatCard label="TOTAL STAKED" value={formatNumber(totalStaked)} accent />
           <StatCard label="WEIGHTED STAKE" value={formatNumber(totalWeighted)} />
           <StatCard label="YOUR BALANCE" value={tokenBalance ? formatNumber(tokenBalance.value) : '0'} />
           <StatCard label="PENDING WETH" value={formatEth(totalPendingWeth)} accent />
+          <StatCard label={`PENDING ${currentToken.symbol.replace('$', '')}`} value={formatNumber(totalPendingToken)} accent />
         </div>
 
         {isConnected && positions.length > 0 && (
@@ -366,8 +367,14 @@ export default function HubPage() {
                   opacity: (totalPendingWeth === BigInt(0) && totalPendingToken === BigInt(0)) ? 0.5 : 1,
                 }}
               >
-                {isClaiming ? 'CLAIMING...' : `CLAIM ${formatEth(totalPendingWeth)} WETH`}
+                {isClaiming ? 'CLAIMING...' : `CLAIM REWARDS`}
               </button>
+              {(totalPendingWeth > BigInt(0) || totalPendingToken > BigInt(0)) && (
+                <div style={{ display: 'flex', gap: '1rem', fontSize: '0.75rem', color: '#888' }}>
+                  {totalPendingWeth > BigInt(0) && <span>{formatEth(totalPendingWeth)} WETH</span>}
+                  {totalPendingToken > BigInt(0) && <span>{formatNumber(totalPendingToken)} {currentToken.symbol.replace('$', '')}</span>}
+                </div>
+              )}
             </div>
             {positions.map((pos: any, i: number) => (
               <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', border: '1px solid #1a1a1a', borderRadius: '8px', marginBottom: '0.5rem' }}>
