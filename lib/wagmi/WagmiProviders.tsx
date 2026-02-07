@@ -15,10 +15,11 @@ export function WagmiProviders({ children }: { children: React.ReactNode }) {
       <QueryClientProvider client={queryClient}>
         <RainbowKitProvider
           theme={darkTheme({
-            accentColor: 'rgb(255, 0, 110)',
-            accentColorForeground: 'black',
-            borderRadius: 'none',
+            accentColor: '#8b5cf6',
+            accentColorForeground: 'white',
+            borderRadius: 'small',
             fontStack: 'system',
+            overlayBlur: 'small',
           })}
         >
           {children}

@@ -1,33 +1,30 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { ConnectButton } from '@rainbow-me/rainbowkit';
+import { useAccount, useBalance, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
+import { formatUnits, parseUnits } from 'viem';
+import { base } from 'wagmi/chains';
 import {
-  PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis,
-  Tooltip, AreaChart, Area, Legend
+  PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend
 } from 'recharts';
-import {
-  Coins, TrendingUp, Users, Lock, Zap, ArrowUpRight, ArrowDownRight,
-  Clock, Shield, Layers, Activity, Wallet, Gift, RefreshCw, ExternalLink,
-  ChevronDown, Check, AlertCircle
-} from 'lucide-react';
 
-const ACCENT = 'rgb(255, 0, 110)';
-const ACCENT_DIM = 'rgba(255, 0, 110, 0.2)';
-const CHART_COLORS = [ACCENT, '#6366f1', '#22c55e', '#f59e0b', '#8b5cf6'];
+const ACCENT = '#8b5cf6';
+const ACCENT_GLOW = 'rgba(139, 92, 246, 0.3)';
+const GREEN = '#10b981';
 
 interface TokenConfig {
   id: string;
   name: string;
   symbol: string;
-  token: string;
-  staking: string;
-  feeSplitter: string;
+  token: `0x${string}`;
+  staking: `0x${string}`;
+  feeSplitter: `0x${string}`;
   description: string;
-  tiers: { name: string; multiplier: string; duration: string }[];
+  decimals: number;
+  tiers: { name: string; multiplier: string; duration: number; index: number }[];
   stakersShare: number;
   treasuryShare: number;
-  apiEndpoint: string;
 }
 
 const TOKENS: TokenConfig[] = [
@@ -39,18 +36,18 @@ const TOKENS: TokenConfig[] = [
     staking: '0xD8eDe592Ed90A9D56aebE321B1d2a4E3201b4c11',
     feeSplitter: '0x0eA046F39EBC7316B418bfcf0962590927B8ecB4',
     description: 'Powering clawg.network infrastructure',
+    decimals: 18,
     stakersShare: 70,
     treasuryShare: 30,
     tiers: [
-      { name: '1 Day', multiplier: '0.5x', duration: '1d' },
-      { name: '7 Days', multiplier: '1.0x', duration: '7d' },
-      { name: '30 Days', multiplier: '1.15x', duration: '30d' },
-      { name: '60 Days', multiplier: '1.35x', duration: '60d' },
-      { name: '90 Days', multiplier: '1.5x', duration: '90d' },
-      { name: '180 Days', multiplier: '2.0x', duration: '180d' },
-      { name: '365 Days', multiplier: '3.0x', duration: '365d' },
+      { name: '1 Day', multiplier: '0.5x', duration: 86400, index: 0 },
+      { name: '7 Days', multiplier: '1.0x', duration: 604800, index: 1 },
+      { name: '30 Days', multiplier: '1.15x', duration: 2592000, index: 2 },
+      { name: '60 Days', multiplier: '1.35x', duration: 5184000, index: 3 },
+      { name: '90 Days', multiplier: '1.5x', duration: 7776000, index: 4 },
+      { name: '180 Days', multiplier: '2.0x', duration: 15552000, index: 5 },
+      { name: '365 Days', multiplier: '3.0x', duration: 31536000, index: 6 },
     ],
-    apiEndpoint: '/api/hub/clawg/stats',
   },
   {
     id: 'fixr',
@@ -59,173 +56,134 @@ const TOKENS: TokenConfig[] = [
     token: '0x8cBb89d67fDA00E26aEd0Fc02718821049b41610',
     staking: '0x39DbBa2CdAF7F668816957B023cbee1841373F5b',
     feeSplitter: '0x5bE1B904ce0Efbb2CC963aFd6E976f8F93AdC928',
-    description: 'FEEDS oracle network governance token',
+    description: 'FEEDS oracle network governance',
+    decimals: 18,
     stakersShare: 70,
     treasuryShare: 30,
     tiers: [
-      { name: '7 Days', multiplier: '1.0x', duration: '7d' },
-      { name: '30 Days', multiplier: '1.25x', duration: '30d' },
-      { name: '90 Days', multiplier: '1.5x', duration: '90d' },
-      { name: '180 Days', multiplier: '2.0x', duration: '180d' },
+      { name: '7 Days', multiplier: '1.0x', duration: 604800, index: 0 },
+      { name: '30 Days', multiplier: '1.25x', duration: 2592000, index: 1 },
+      { name: '90 Days', multiplier: '1.5x', duration: 7776000, index: 2 },
+      { name: '180 Days', multiplier: '2.0x', duration: 15552000, index: 3 },
     ],
-    apiEndpoint: '/api/hub/stats',
   },
 ];
 
-interface StakePosition {
-  id: number;
-  amount: number;
-  weightedAmount: number;
-  lockTier: number;
-  tierName: string;
-  stakedAt: number;
-  unlockAt: number;
-  isUnlocked: boolean;
-}
+const ERC20_ABI = [
+  { name: 'balanceOf', type: 'function', stateMutability: 'view', inputs: [{ name: 'account', type: 'address' }], outputs: [{ type: 'uint256' }] },
+  { name: 'approve', type: 'function', stateMutability: 'nonpayable', inputs: [{ name: 'spender', type: 'address' }, { name: 'amount', type: 'uint256' }], outputs: [{ type: 'bool' }] },
+  { name: 'allowance', type: 'function', stateMutability: 'view', inputs: [{ name: 'owner', type: 'address' }, { name: 'spender', type: 'address' }], outputs: [{ type: 'uint256' }] },
+] as const;
 
-interface UserData {
-  address: string;
-  positions: StakePosition[];
-  totalStaked: number;
-  weightedStake: number;
-  pendingRewards: { weth: number; clawg: number };
-  earliestClaimTime: number;
-  canClaim: boolean;
-  tokenBalance: number;
-}
+const STAKING_ABI = [
+  { name: 'totalStakedAmount', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
+  { name: 'totalWeightedStake', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
+  { name: 'userWeightedStake', type: 'function', stateMutability: 'view', inputs: [{ name: 'user', type: 'address' }], outputs: [{ type: 'uint256' }] },
+  { name: 'getPositions', type: 'function', stateMutability: 'view', inputs: [{ name: 'user', type: 'address' }], outputs: [{ type: 'tuple[]', components: [{ name: 'amount', type: 'uint256' }, { name: 'weightedAmount', type: 'uint256' }, { name: 'lockTier', type: 'uint256' }, { name: 'stakedAt', type: 'uint256' }, { name: 'unlockAt', type: 'uint256' }] }] },
+  { name: 'pendingRewards', type: 'function', stateMutability: 'view', inputs: [{ name: 'user', type: 'address' }, { name: 'rewardToken', type: 'address' }], outputs: [{ type: 'uint256' }] },
+  { name: 'stake', type: 'function', stateMutability: 'nonpayable', inputs: [{ name: 'amount', type: 'uint256' }, { name: 'tierIndex', type: 'uint256' }], outputs: [{ type: 'uint256' }] },
+  { name: 'unstake', type: 'function', stateMutability: 'nonpayable', inputs: [{ name: 'positionId', type: 'uint256' }], outputs: [] },
+  { name: 'claimRewards', type: 'function', stateMutability: 'nonpayable', inputs: [], outputs: [] },
+] as const;
 
-interface TokenStats {
-  totalSupply: number;
-  totalStaked: number;
-  totalWeightedStake: number;
-  pendingFees: { weth: number };
-  accumulatedRewards: { weth: number };
-}
+const WETH = '0x4200000000000000000000000000000000000006' as const;
 
 export default function HubPage() {
-  const router = useRouter();
   const [activeToken, setActiveToken] = useState<string>('clawg');
-  const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState<TokenStats>({
-    totalSupply: 0,
-    totalStaked: 0,
-    totalWeightedStake: 0,
-    pendingFees: { weth: 0 },
-    accumulatedRewards: { weth: 0 },
-  });
-  const [userData, setUserData] = useState<UserData | null>(null);
-  const [walletConnected, setWalletConnected] = useState(false);
-  const [walletAddress, setWalletAddress] = useState<string>('');
   const [stakeAmount, setStakeAmount] = useState<string>('');
   const [selectedTier, setSelectedTier] = useState<number>(1);
   const [tierDropdownOpen, setTierDropdownOpen] = useState(false);
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
 
+  const { address, isConnected } = useAccount();
   const currentToken = TOKENS.find(t => t.id === activeToken) || TOKENS[0];
 
-  const fetchStats = useCallback(async () => {
-    try {
-      setRefreshing(true);
-      const endpoint = currentToken.id === 'clawg'
-        ? `/api/hub/clawg/stats${walletAddress ? `?user=${walletAddress}` : ''}`
-        : '/api/hub/stats';
+  const { data: tokenBalance } = useBalance({
+    address,
+    token: currentToken.token,
+    chainId: base.id,
+  });
 
-      const res = await fetch(endpoint);
-      if (res.ok) {
-        const data = await res.json();
+  const { data: totalStaked } = useReadContract({
+    address: currentToken.staking,
+    abi: STAKING_ABI,
+    functionName: 'totalStakedAmount',
+    chainId: base.id,
+  });
 
-        if (currentToken.id === 'clawg') {
-          setStats({
-            totalSupply: data.token?.totalSupply || 0,
-            totalStaked: data.staking?.totalStaked || 0,
-            totalWeightedStake: data.staking?.totalWeightedStake || 0,
-            pendingFees: { weth: data.feeSplitter?.pending?.weth || 0 },
-            accumulatedRewards: { weth: data.staking?.accumulatedRewards?.weth || 0 },
-          });
-          if (data.user) {
-            setUserData(data.user);
-          }
-        } else {
-          setStats({
-            totalSupply: data.token?.totalSupply || 100_000_000_000,
-            totalStaked: data.staking?.totalStaked || 0,
-            totalWeightedStake: data.staking?.totalWeightedStake || 0,
-            pendingFees: { weth: data.fees?.pendingDistribution || 0 },
-            accumulatedRewards: { weth: data.fees?.totalDistributedToStakers || 0 },
-          });
-        }
-      }
-    } catch (error) {
-      console.error('Failed to fetch stats:', error);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [currentToken, walletAddress]);
+  const { data: totalWeighted } = useReadContract({
+    address: currentToken.staking,
+    abi: STAKING_ABI,
+    functionName: 'totalWeightedStake',
+    chainId: base.id,
+  });
 
-  useEffect(() => {
-    fetchStats();
-    const interval = setInterval(fetchStats, 30000);
-    return () => clearInterval(interval);
-  }, [fetchStats]);
+  const { data: userPositions } = useReadContract({
+    address: currentToken.staking,
+    abi: STAKING_ABI,
+    functionName: 'getPositions',
+    args: address ? [address] : undefined,
+    chainId: base.id,
+    query: { enabled: !!address },
+  });
 
-  useEffect(() => {
-    checkWallet();
-    if (typeof window !== 'undefined' && (window as unknown as { ethereum?: { on: (event: string, handler: () => void) => void } }).ethereum) {
-      const ethereum = (window as unknown as { ethereum: { on: (event: string, handler: () => void) => void } }).ethereum;
-      ethereum.on('accountsChanged', checkWallet);
-    }
-  }, []);
+  const { data: pendingWeth } = useReadContract({
+    address: currentToken.staking,
+    abi: STAKING_ABI,
+    functionName: 'pendingRewards',
+    args: address ? [address, WETH] : undefined,
+    chainId: base.id,
+    query: { enabled: !!address },
+  });
 
-  const checkWallet = async () => {
-    if (typeof window !== 'undefined' && (window as unknown as { ethereum?: { request: (args: { method: string }) => Promise<string[]> } }).ethereum) {
-      try {
-        const ethereum = (window as unknown as { ethereum: { request: (args: { method: string }) => Promise<string[]> } }).ethereum;
-        const accounts = await ethereum.request({ method: 'eth_accounts' });
-        if (accounts.length > 0) {
-          setWalletConnected(true);
-          setWalletAddress(accounts[0]);
-        }
-      } catch (e) {
-        console.error('Wallet check failed:', e);
-      }
-    }
+  const { data: pendingToken } = useReadContract({
+    address: currentToken.staking,
+    abi: STAKING_ABI,
+    functionName: 'pendingRewards',
+    args: address ? [address, currentToken.token] : undefined,
+    chainId: base.id,
+    query: { enabled: !!address },
+  });
+
+  const { data: allowance } = useReadContract({
+    address: currentToken.token,
+    abi: ERC20_ABI,
+    functionName: 'allowance',
+    args: address ? [address, currentToken.staking] : undefined,
+    chainId: base.id,
+    query: { enabled: !!address },
+  });
+
+  const { writeContract: approve, data: approveHash } = useWriteContract();
+  const { writeContract: stake, data: stakeHash } = useWriteContract();
+  const { writeContract: unstake, data: unstakeHash } = useWriteContract();
+  const { writeContract: claim, data: claimHash } = useWriteContract();
+
+  const { isLoading: isApproving } = useWaitForTransactionReceipt({ hash: approveHash });
+  const { isLoading: isStaking } = useWaitForTransactionReceipt({ hash: stakeHash });
+  const { isLoading: isUnstaking } = useWaitForTransactionReceipt({ hash: unstakeHash });
+  const { isLoading: isClaiming } = useWaitForTransactionReceipt({ hash: claimHash });
+
+  const formatNumber = (num: bigint | undefined, decimals = 18) => {
+    if (!num) return '0';
+    const formatted = parseFloat(formatUnits(num, decimals));
+    if (formatted >= 1_000_000_000) return (formatted / 1_000_000_000).toFixed(2) + 'B';
+    if (formatted >= 1_000_000) return (formatted / 1_000_000).toFixed(2) + 'M';
+    if (formatted >= 1_000) return (formatted / 1_000).toFixed(2) + 'K';
+    return formatted.toFixed(2);
   };
 
-  const connectWallet = async () => {
-    if (typeof window !== 'undefined' && (window as unknown as { ethereum?: { request: (args: { method: string }) => Promise<string[]> } }).ethereum) {
-      try {
-        const ethereum = (window as unknown as { ethereum: { request: (args: { method: string }) => Promise<string[]> } }).ethereum;
-        const accounts = await ethereum.request({ method: 'eth_requestAccounts' });
-        if (accounts.length > 0) {
-          setWalletConnected(true);
-          setWalletAddress(accounts[0]);
-          fetchStats();
-        }
-      } catch (e) {
-        console.error('Wallet connect failed:', e);
-      }
-    }
+  const formatEth = (num: bigint | undefined) => {
+    if (!num) return '0';
+    const formatted = parseFloat(formatUnits(num, 18));
+    if (formatted < 0.0001 && formatted > 0) return '<0.0001';
+    return formatted.toFixed(4);
   };
 
-  const formatNumber = (num: number, decimals = 2) => {
-    if (num >= 1_000_000_000) return (num / 1_000_000_000).toFixed(decimals) + 'B';
-    if (num >= 1_000_000) return (num / 1_000_000).toFixed(decimals) + 'M';
-    if (num >= 1_000) return (num / 1_000).toFixed(decimals) + 'K';
-    if (num < 0.0001 && num > 0) return num.toExponential(2);
-    return num.toFixed(decimals);
-  };
-
-  const formatEth = (num: number) => {
-    if (num < 0.0001 && num > 0) return '<0.0001';
-    return num.toFixed(4);
-  };
-
-  const formatTimeRemaining = (unlockAt: number) => {
+  const formatTimeRemaining = (unlockAt: bigint) => {
     const now = Date.now();
-    if (now >= unlockAt) return 'Unlocked';
-    const diff = unlockAt - now;
+    const unlock = Number(unlockAt) * 1000;
+    if (now >= unlock) return 'Unlocked';
+    const diff = unlock - now;
     const days = Math.floor(diff / (1000 * 60 * 60 * 24));
     const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
     if (days > 0) return `${days}d ${hours}h`;
@@ -233,83 +191,92 @@ export default function HubPage() {
     return `${hours}h ${mins}m`;
   };
 
+  const handleApprove = () => {
+    if (!stakeAmount) return;
+    approve({
+      address: currentToken.token,
+      abi: ERC20_ABI,
+      functionName: 'approve',
+      args: [currentToken.staking, parseUnits(stakeAmount, currentToken.decimals)],
+      chainId: base.id,
+    });
+  };
+
+  const handleStake = () => {
+    if (!stakeAmount) return;
+    stake({
+      address: currentToken.staking,
+      abi: STAKING_ABI,
+      functionName: 'stake',
+      args: [parseUnits(stakeAmount, currentToken.decimals), BigInt(selectedTier)],
+      chainId: base.id,
+    });
+  };
+
+  const handleUnstake = (positionId: number) => {
+    unstake({
+      address: currentToken.staking,
+      abi: STAKING_ABI,
+      functionName: 'unstake',
+      args: [BigInt(positionId)],
+      chainId: base.id,
+    });
+  };
+
+  const handleClaim = () => {
+    claim({
+      address: currentToken.staking,
+      abi: STAKING_ABI,
+      functionName: 'claimRewards',
+      chainId: base.id,
+    });
+  };
+
+  const needsApproval = stakeAmount && allowance !== undefined &&
+    parseUnits(stakeAmount || '0', currentToken.decimals) > (allowance || BigInt(0));
+
+  const positions = (userPositions as any[] || []).filter((p: any) => p.amount > BigInt(0));
+  const totalPendingWeth = pendingWeth || BigInt(0);
+  const totalPendingToken = pendingToken || BigInt(0);
+
   const feeDistributionData = [
     { name: `Stakers (${currentToken.stakersShare}%)`, value: currentToken.stakersShare, color: ACCENT },
     { name: `Treasury (${currentToken.treasuryShare}%)`, value: currentToken.treasuryShare, color: '#6366f1' },
   ];
 
-  const tierChartData = currentToken.tiers.map((tier, i) => ({
-    name: tier.name,
-    multiplier: parseFloat(tier.multiplier),
-    fill: i === selectedTier ? ACCENT : '#374151',
-  }));
-
   return (
-    <div className="min-h-screen bg-black text-white font-mono">
-      <div
-        className="fixed inset-0"
-        style={{
-          backgroundColor: '#000000',
-          backgroundImage: 'linear-gradient(to right, rgba(128, 128, 128, 0.3) 1px, transparent 1px), linear-gradient(to bottom, rgba(128, 128, 128, 0.3) 1px, transparent 1px)',
-          backgroundSize: '40px 40px'
-        }}
-      />
-
-      <nav className="relative border-b border-gray-800 bg-black/90 backdrop-blur-xl">
-        <div className="container mx-auto px-6 py-6 flex items-center justify-between">
-          <button
-            onClick={() => router.push('/')}
-            className="flex items-center gap-3 hover:opacity-80 transition-opacity"
-          >
-            <img src="/feedslogotransparent.png" alt="FEEDS Logo" className="w-10 h-10" />
-            <div className="flex flex-col">
-              <h1 className="text-2xl font-bold tracking-tight">TOKEN HUB</h1>
-              <p className="text-xs text-gray-500 tracking-wide">STAKE & EARN</p>
+    <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: "'SF Mono', 'Fira Code', monospace" }}>
+      <nav style={{ borderBottom: '1px solid #1a1a1a', background: '#050505' }}>
+        <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '1.5rem 2rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <img src="/fixrpfp.png" alt="Fixr" style={{ width: '40px', height: '40px', borderRadius: '50%' }} />
+            <div>
+              <h1 style={{ fontSize: '1.5rem', fontWeight: 700, margin: 0 }}>TOKEN HUB</h1>
+              <p style={{ fontSize: '0.7rem', color: '#666', margin: 0 }}>STAKE & EARN</p>
             </div>
-          </button>
-
-          <div className="flex items-center gap-6">
-            <a href="/" className="text-sm text-gray-400 hover:text-white transition-colors">HOME</a>
-            <a href="/marketplace" className="text-sm text-gray-400 hover:text-white transition-colors">MARKETPLACE</a>
-
-            {walletConnected ? (
-              <div className="flex items-center gap-3 px-4 py-2 border border-gray-800">
-                <div className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: ACCENT }} />
-                <span className="text-sm text-gray-400">
-                  {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
-                </span>
-              </div>
-            ) : (
-              <button
-                onClick={connectWallet}
-                className="px-4 py-2 border transition-all flex items-center gap-2"
-                style={{ borderColor: ACCENT, color: ACCENT }}
-              >
-                <Wallet size={14} />
-                CONNECT
-              </button>
-            )}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+            <a href="https://fixr.nexus" style={{ color: '#666', textDecoration: 'none', fontSize: '0.85rem' }}>HOME</a>
+            <ConnectButton showBalance={false} />
           </div>
         </div>
       </nav>
 
-      <main className="relative container mx-auto px-6 py-8">
-        <div className="flex items-center justify-center gap-2 mb-8">
+      <main style={{ maxWidth: '1100px', margin: '0 auto', padding: '2rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem', marginBottom: '2rem' }}>
           {TOKENS.map((token) => (
             <button
               key={token.id}
-              onClick={() => {
-                setActiveToken(token.id);
-                setLoading(true);
-              }}
-              className={`px-6 py-3 border-2 transition-all font-bold ${
-                activeToken === token.id
-                  ? 'text-white'
-                  : 'border-gray-800 text-gray-500 hover:border-gray-600 hover:text-gray-300'
-              }`}
+              onClick={() => setActiveToken(token.id)}
               style={{
-                borderColor: activeToken === token.id ? ACCENT : undefined,
-                backgroundColor: activeToken === token.id ? ACCENT_DIM : undefined,
+                padding: '0.75rem 1.5rem',
+                border: `2px solid ${activeToken === token.id ? ACCENT : '#1a1a1a'}`,
+                background: activeToken === token.id ? ACCENT_GLOW : 'transparent',
+                color: activeToken === token.id ? '#fff' : '#666',
+                fontWeight: 600,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                borderRadius: '6px',
               }}
             >
               {token.symbol}
@@ -317,465 +284,265 @@ export default function HubPage() {
           ))}
         </div>
 
-        <div className="text-center mb-12">
-          <h2 className="text-5xl font-bold mb-4 tracking-tight">
+        <div style={{ textAlign: 'center', marginBottom: '3rem' }}>
+          <h2 style={{ fontSize: '3rem', fontWeight: 700, marginBottom: '0.5rem' }}>
             {currentToken.symbol}.<span style={{ color: ACCENT }}>NEXUS</span>
           </h2>
-          <p className="text-xl text-gray-400 max-w-2xl mx-auto">
-            {currentToken.description}. Stake to earn {currentToken.stakersShare}% of all trading fees.
+          <p style={{ color: '#666', fontSize: '1.1rem' }}>
+            {currentToken.description}. Stake to earn {currentToken.stakersShare}% of trading fees.
           </p>
-          <button
-            onClick={() => fetchStats()}
-            disabled={refreshing}
-            className="mt-4 px-3 py-1 border border-gray-800 text-gray-500 hover:text-white hover:border-gray-600 transition-all text-sm flex items-center gap-2 mx-auto"
-          >
-            <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} />
-            REFRESH
-          </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-12">
-          <StatCard
-            icon={<Coins size={24} />}
-            label="TOTAL SUPPLY"
-            value={formatNumber(stats.totalSupply)}
-            subtext="Fixed supply"
-            loading={loading}
-          />
-          <StatCard
-            icon={<Lock size={24} />}
-            label="TOTAL STAKED"
-            value={formatNumber(stats.totalStaked)}
-            subtext={stats.totalSupply > 0 ? `${((stats.totalStaked / stats.totalSupply) * 100).toFixed(4)}% of supply` : '—'}
-            accent
-            loading={loading}
-          />
-          <StatCard
-            icon={<TrendingUp size={24} />}
-            label="WEIGHTED STAKE"
-            value={formatNumber(stats.totalWeightedStake)}
-            subtext="Lock bonus applied"
-            loading={loading}
-          />
-          <StatCard
-            icon={<Gift size={24} />}
-            label="PENDING FEES"
-            value={`${formatEth(stats.pendingFees.weth)} ETH`}
-            subtext="Ready to distribute"
-            accent
-            loading={loading}
-          />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '2rem' }}>
+          <StatCard label="TOTAL STAKED" value={formatNumber(totalStaked)} accent />
+          <StatCard label="WEIGHTED STAKE" value={formatNumber(totalWeighted)} />
+          <StatCard label="YOUR BALANCE" value={tokenBalance ? formatNumber(tokenBalance.value) : '0'} />
+          <StatCard label="PENDING WETH" value={formatEth(totalPendingWeth)} accent />
         </div>
 
-        {walletConnected && userData && (
-          <div className="border border-gray-800 bg-black p-6 mb-12">
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center gap-3">
-                <Wallet size={20} style={{ color: ACCENT }} />
-                <h3 className="text-lg font-bold">YOUR POSITIONS</h3>
-              </div>
-              <div className="flex items-center gap-4">
-                <div className="text-right">
-                  <p className="text-xs text-gray-600">PENDING REWARDS</p>
-                  <p className="text-lg font-bold" style={{ color: ACCENT }}>
-                    {formatEth(userData.pendingRewards.weth)} WETH
-                  </p>
-                </div>
-                <button
-                  onClick={() => {}}
-                  disabled={!userData.canClaim || userData.pendingRewards.weth === 0}
-                  className={`px-4 py-2 border font-bold transition-all ${
-                    userData.canClaim && userData.pendingRewards.weth > 0
-                      ? 'hover:bg-white hover:text-black'
-                      : 'opacity-50 cursor-not-allowed'
-                  }`}
-                  style={{ borderColor: ACCENT, color: ACCENT }}
-                >
-                  CLAIM REWARDS
-                </button>
-              </div>
+        {isConnected && positions.length > 0 && (
+          <div style={{ background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: '12px', padding: '1.5rem', marginBottom: '2rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <h3 style={{ fontSize: '0.9rem', color: '#666', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Your Positions</h3>
+              <button
+                onClick={handleClaim}
+                disabled={isClaiming || (totalPendingWeth === BigInt(0) && totalPendingToken === BigInt(0))}
+                style={{
+                  padding: '0.5rem 1rem',
+                  border: `1px solid ${ACCENT}`,
+                  background: 'transparent',
+                  color: ACCENT,
+                  cursor: isClaiming ? 'wait' : 'pointer',
+                  fontFamily: 'inherit',
+                  borderRadius: '6px',
+                  opacity: (totalPendingWeth === BigInt(0) && totalPendingToken === BigInt(0)) ? 0.5 : 1,
+                }}
+              >
+                {isClaiming ? 'CLAIMING...' : `CLAIM ${formatEth(totalPendingWeth)} WETH`}
+              </button>
             </div>
-
-            {userData.positions.length > 0 ? (
-              <div className="space-y-3">
-                {userData.positions.map((pos) => (
-                  <div
-                    key={pos.id}
-                    className="flex items-center justify-between p-4 border border-gray-800 hover:border-gray-700 transition-all"
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 border border-gray-700 flex items-center justify-center">
-                        <Lock size={16} className="text-gray-400" />
-                      </div>
-                      <div>
-                        <p className="font-bold">{formatNumber(pos.amount)} {currentToken.symbol.replace('$', '')}</p>
-                        <p className="text-xs text-gray-600">{pos.tierName} lock</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-6">
-                      <div className="text-right">
-                        <p className="text-sm text-gray-400">Weighted</p>
-                        <p className="font-bold">{formatNumber(pos.weightedAmount)}</p>
-                      </div>
-                      <div className="text-right min-w-[100px]">
-                        <p className="text-sm text-gray-400">Time Left</p>
-                        <p className={`font-bold ${pos.isUnlocked ? 'text-green-500' : ''}`}>
-                          {formatTimeRemaining(pos.unlockAt)}
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => {}}
-                        disabled={!pos.isUnlocked}
-                        className={`px-4 py-2 border text-sm transition-all ${
-                          pos.isUnlocked
-                            ? 'border-green-500 text-green-500 hover:bg-green-500 hover:text-black'
-                            : 'border-gray-700 text-gray-600 cursor-not-allowed'
-                        }`}
-                      >
-                        UNSTAKE
-                      </button>
-                    </div>
+            {positions.map((pos: any, i: number) => (
+              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', border: '1px solid #1a1a1a', borderRadius: '8px', marginBottom: '0.5rem' }}>
+                <div>
+                  <p style={{ fontWeight: 600, marginBottom: '0.25rem' }}>{formatNumber(pos.amount)} {currentToken.symbol.replace('$', '')}</p>
+                  <p style={{ fontSize: '0.75rem', color: '#666' }}>{currentToken.tiers[Number(pos.lockTier)]?.name || 'Unknown'} lock</p>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+                  <div style={{ textAlign: 'right' }}>
+                    <p style={{ fontSize: '0.75rem', color: '#666' }}>Time Left</p>
+                    <p style={{ fontWeight: 600, color: Date.now() >= Number(pos.unlockAt) * 1000 ? GREEN : '#fff' }}>
+                      {formatTimeRemaining(pos.unlockAt)}
+                    </p>
                   </div>
-                ))}
+                  <button
+                    onClick={() => handleUnstake(i)}
+                    disabled={isUnstaking || Date.now() < Number(pos.unlockAt) * 1000}
+                    style={{
+                      padding: '0.5rem 1rem',
+                      border: `1px solid ${Date.now() >= Number(pos.unlockAt) * 1000 ? GREEN : '#333'}`,
+                      background: 'transparent',
+                      color: Date.now() >= Number(pos.unlockAt) * 1000 ? GREEN : '#666',
+                      cursor: Date.now() >= Number(pos.unlockAt) * 1000 ? 'pointer' : 'not-allowed',
+                      fontFamily: 'inherit',
+                      borderRadius: '6px',
+                      fontSize: '0.8rem',
+                    }}
+                  >
+                    {isUnstaking ? '...' : 'UNSTAKE'}
+                  </button>
+                </div>
               </div>
-            ) : (
-              <div className="text-center py-8 text-gray-600">
-                <Lock size={32} className="mx-auto mb-3 opacity-50" />
-                <p>No active stake positions</p>
-              </div>
-            )}
+            ))}
           </div>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-12">
-          <div className="border border-gray-800 bg-black p-6">
-            <div className="flex items-center gap-3 mb-6">
-              <Zap size={20} style={{ color: ACCENT }} />
-              <h3 className="text-lg font-bold">STAKE {currentToken.symbol}</h3>
-            </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '2rem' }}>
+          <div style={{ background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: '12px', padding: '1.5rem' }}>
+            <h3 style={{ fontSize: '0.9rem', color: '#666', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '1.5rem' }}>
+              Stake {currentToken.symbol}
+            </h3>
 
-            {!walletConnected ? (
-              <div className="text-center py-12">
-                <Wallet size={40} className="mx-auto mb-4 text-gray-600" />
-                <p className="text-gray-500 mb-4">Connect wallet to stake</p>
-                <button
-                  onClick={connectWallet}
-                  className="px-6 py-3 border font-bold transition-all hover:bg-white hover:text-black"
-                  style={{ borderColor: ACCENT, color: ACCENT }}
-                >
-                  CONNECT WALLET
-                </button>
+            {!isConnected ? (
+              <div style={{ textAlign: 'center', padding: '2rem' }}>
+                <p style={{ color: '#666', marginBottom: '1rem' }}>Connect wallet to stake</p>
+                <ConnectButton />
               </div>
             ) : (
-              <div className="space-y-6">
-                <div>
-                  <label className="text-xs text-gray-600 mb-2 block">AMOUNT</label>
-                  <div className="flex items-center border border-gray-800 focus-within:border-gray-600 transition-all">
+              <div>
+                <div style={{ marginBottom: '1rem' }}>
+                  <label style={{ fontSize: '0.75rem', color: '#666', display: 'block', marginBottom: '0.5rem' }}>AMOUNT</label>
+                  <div style={{ display: 'flex', border: '1px solid #1a1a1a', borderRadius: '6px', overflow: 'hidden' }}>
                     <input
                       type="text"
                       value={stakeAmount}
                       onChange={(e) => setStakeAmount(e.target.value.replace(/[^0-9.]/g, ''))}
                       placeholder="0.00"
-                      className="flex-1 bg-transparent px-4 py-3 outline-none text-lg"
+                      style={{ flex: 1, padding: '0.75rem', background: 'transparent', border: 'none', color: '#fff', fontFamily: 'inherit', fontSize: '1rem', outline: 'none' }}
                     />
-                    <span className="px-4 text-gray-500">{currentToken.symbol.replace('$', '')}</span>
                     <button
-                      onClick={() => userData && setStakeAmount(userData.tokenBalance.toString())}
-                      className="px-3 py-1 mr-2 border border-gray-700 text-xs text-gray-500 hover:text-white hover:border-gray-500 transition-all"
+                      onClick={() => tokenBalance && setStakeAmount(formatUnits(tokenBalance.value, currentToken.decimals))}
+                      style={{ padding: '0.5rem 1rem', background: '#1a1a1a', border: 'none', color: '#666', cursor: 'pointer', fontFamily: 'inherit', fontSize: '0.75rem' }}
                     >
                       MAX
                     </button>
                   </div>
-                  {userData && (
-                    <p className="text-xs text-gray-600 mt-1">
-                      Balance: {formatNumber(userData.tokenBalance)} {currentToken.symbol.replace('$', '')}
-                    </p>
+                  <p style={{ fontSize: '0.7rem', color: '#444', marginTop: '0.25rem' }}>
+                    Balance: {tokenBalance ? formatUnits(tokenBalance.value, currentToken.decimals) : '0'}
+                  </p>
+                </div>
+
+                <div style={{ marginBottom: '1rem', position: 'relative' }}>
+                  <label style={{ fontSize: '0.75rem', color: '#666', display: 'block', marginBottom: '0.5rem' }}>LOCK PERIOD</label>
+                  <button
+                    onClick={() => setTierDropdownOpen(!tierDropdownOpen)}
+                    style={{ width: '100%', padding: '0.75rem', border: '1px solid #1a1a1a', borderRadius: '6px', background: 'transparent', color: '#fff', display: 'flex', justifyContent: 'space-between', cursor: 'pointer', fontFamily: 'inherit' }}
+                  >
+                    <span>{currentToken.tiers[selectedTier]?.name}</span>
+                    <span style={{ color: ACCENT }}>{currentToken.tiers[selectedTier]?.multiplier}</span>
+                  </button>
+                  {tierDropdownOpen && (
+                    <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: '6px', marginTop: '0.25rem', zIndex: 10 }}>
+                      {currentToken.tiers.map((tier, i) => (
+                        <button
+                          key={i}
+                          onClick={() => { setSelectedTier(i); setTierDropdownOpen(false); }}
+                          style={{ width: '100%', padding: '0.75rem', border: 'none', background: selectedTier === i ? '#1a1a1a' : 'transparent', color: '#fff', display: 'flex', justifyContent: 'space-between', cursor: 'pointer', fontFamily: 'inherit' }}
+                        >
+                          <span>{tier.name}</span>
+                          <span style={{ color: ACCENT }}>{tier.multiplier}</span>
+                        </button>
+                      ))}
+                    </div>
                   )}
                 </div>
 
-                <div>
-                  <label className="text-xs text-gray-600 mb-2 block">LOCK PERIOD</label>
-                  <div className="relative">
-                    <button
-                      onClick={() => setTierDropdownOpen(!tierDropdownOpen)}
-                      className="w-full flex items-center justify-between px-4 py-3 border border-gray-800 hover:border-gray-600 transition-all"
-                    >
-                      <div className="flex items-center gap-3">
-                        <Clock size={16} className="text-gray-500" />
-                        <span>{currentToken.tiers[selectedTier]?.name}</span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span style={{ color: ACCENT }}>{currentToken.tiers[selectedTier]?.multiplier}</span>
-                        <ChevronDown size={16} className={`text-gray-500 transition-transform ${tierDropdownOpen ? 'rotate-180' : ''}`} />
-                      </div>
-                    </button>
-
-                    {tierDropdownOpen && (
-                      <div className="absolute top-full left-0 right-0 mt-1 border border-gray-800 bg-black z-10">
-                        {currentToken.tiers.map((tier, i) => (
-                          <button
-                            key={i}
-                            onClick={() => {
-                              setSelectedTier(i);
-                              setTierDropdownOpen(false);
-                            }}
-                            className={`w-full flex items-center justify-between px-4 py-3 hover:bg-gray-900 transition-all ${
-                              selectedTier === i ? 'bg-gray-900' : ''
-                            }`}
-                          >
-                            <span>{tier.name}</span>
-                            <div className="flex items-center gap-3">
-                              <span style={{ color: ACCENT }}>{tier.multiplier}</span>
-                              {selectedTier === i && <Check size={14} style={{ color: ACCENT }} />}
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="p-4 border border-gray-800 bg-gray-900/30">
-                  <div className="flex justify-between text-sm mb-2">
-                    <span className="text-gray-500">You stake</span>
-                    <span>{stakeAmount || '0'} {currentToken.symbol.replace('$', '')}</span>
-                  </div>
-                  <div className="flex justify-between text-sm mb-2">
-                    <span className="text-gray-500">Lock period</span>
-                    <span>{currentToken.tiers[selectedTier]?.name}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">Weighted stake</span>
+                <div style={{ padding: '1rem', background: '#111', borderRadius: '6px', marginBottom: '1rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.85rem' }}>
+                    <span style={{ color: '#666' }}>Weighted stake</span>
                     <span style={{ color: ACCENT }}>
-                      {((parseFloat(stakeAmount) || 0) * parseFloat(currentToken.tiers[selectedTier]?.multiplier || '1')).toFixed(2)} {currentToken.symbol.replace('$', '')}
+                      {((parseFloat(stakeAmount) || 0) * parseFloat(currentToken.tiers[selectedTier]?.multiplier || '1')).toFixed(2)}
                     </span>
                   </div>
                 </div>
 
                 <button
-                  onClick={() => {}}
-                  disabled={!stakeAmount || parseFloat(stakeAmount) === 0}
-                  className={`w-full py-4 border-2 font-bold transition-all ${
-                    stakeAmount && parseFloat(stakeAmount) > 0
-                      ? 'hover:bg-white hover:text-black'
-                      : 'opacity-50 cursor-not-allowed'
-                  }`}
-                  style={{ borderColor: ACCENT, color: ACCENT }}
+                  onClick={needsApproval ? handleApprove : handleStake}
+                  disabled={!stakeAmount || parseFloat(stakeAmount) === 0 || isApproving || isStaking}
+                  style={{
+                    width: '100%',
+                    padding: '1rem',
+                    border: `2px solid ${ACCENT}`,
+                    background: ACCENT,
+                    color: '#fff',
+                    fontWeight: 600,
+                    cursor: (!stakeAmount || isApproving || isStaking) ? 'not-allowed' : 'pointer',
+                    fontFamily: 'inherit',
+                    borderRadius: '6px',
+                    opacity: (!stakeAmount || parseFloat(stakeAmount) === 0) ? 0.5 : 1,
+                  }}
                 >
-                  STAKE {currentToken.symbol}
+                  {isApproving ? 'APPROVING...' : isStaking ? 'STAKING...' : needsApproval ? 'APPROVE' : `STAKE ${currentToken.symbol}`}
                 </button>
               </div>
             )}
           </div>
 
-          <div className="border border-gray-800 bg-black p-6">
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center gap-3">
-                <Layers size={20} className="text-gray-400" />
-                <h3 className="text-lg font-bold">FEE DISTRIBUTION</h3>
-              </div>
-              <span className="text-xs text-gray-600">PER DISTRIBUTION</span>
-            </div>
-
-            <div className="h-48">
+          <div style={{ background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: '12px', padding: '1.5rem' }}>
+            <h3 style={{ fontSize: '0.9rem', color: '#666', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '1rem' }}>Fee Distribution</h3>
+            <div style={{ height: '200px' }}>
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie
-                    data={feeDistributionData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={50}
-                    outerRadius={80}
-                    paddingAngle={2}
-                    dataKey="value"
-                  >
+                  <Pie data={feeDistributionData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={2} dataKey="value">
                     {feeDistributionData.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                   </Pie>
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#111',
-                      border: '1px solid #333',
-                      borderRadius: 0,
-                      fontFamily: 'monospace'
-                    }}
-                  />
-                  <Legend
-                    formatter={(value) => <span className="text-gray-400 text-sm">{value}</span>}
-                  />
+                  <Tooltip contentStyle={{ background: '#111', border: '1px solid #333', borderRadius: '6px', fontFamily: 'monospace' }} />
+                  <Legend formatter={(value) => <span style={{ color: '#666', fontSize: '0.8rem' }}>{value}</span>} />
                 </PieChart>
               </ResponsiveContainer>
             </div>
-
-            <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-gray-800">
-              <div>
-                <p className="text-xs text-gray-600 mb-1">STAKERS RECEIVE</p>
-                <p className="text-xl font-bold" style={{ color: ACCENT }}>
-                  {currentToken.stakersShare}%
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-600 mb-1">TREASURY RECEIVES</p>
-                <p className="text-xl font-bold text-indigo-400">
-                  {currentToken.treasuryShare}%
-                </p>
-              </div>
-            </div>
           </div>
         </div>
 
-        <div className="border border-gray-800 bg-black p-6 mb-12">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-3">
-              <Clock size={20} className="text-gray-400" />
-              <h3 className="text-lg font-bold">LOCK TIERS & MULTIPLIERS</h3>
-            </div>
-            <span className="text-xs text-gray-600">LONGER LOCK = HIGHER REWARDS</span>
-          </div>
-
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+        <div style={{ background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: '12px', padding: '1.5rem', marginBottom: '2rem' }}>
+          <h3 style={{ fontSize: '0.9rem', color: '#666', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '1rem' }}>Lock Tiers</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${currentToken.tiers.length}, 1fr)`, gap: '0.75rem' }}>
             {currentToken.tiers.map((tier, i) => (
-              <div
+              <button
                 key={i}
                 onClick={() => setSelectedTier(i)}
-                className={`p-4 border cursor-pointer transition-all ${
-                  selectedTier === i
-                    ? 'border-2'
-                    : 'border-gray-800 hover:border-gray-600'
-                }`}
                 style={{
-                  borderColor: selectedTier === i ? ACCENT : undefined,
-                  backgroundColor: selectedTier === i ? ACCENT_DIM : undefined,
+                  padding: '1rem',
+                  border: `2px solid ${selectedTier === i ? ACCENT : '#1a1a1a'}`,
+                  background: selectedTier === i ? ACCENT_GLOW : 'transparent',
+                  cursor: 'pointer',
+                  borderRadius: '8px',
+                  textAlign: 'center',
                 }}
               >
-                <p className="text-xs text-gray-500 mb-1">{tier.name.toUpperCase()}</p>
-                <p
-                  className="text-2xl font-bold"
-                  style={{ color: selectedTier === i ? ACCENT : 'white' }}
-                >
-                  {tier.multiplier}
-                </p>
-              </div>
+                <p style={{ fontSize: '0.7rem', color: '#666', marginBottom: '0.25rem' }}>{tier.name.toUpperCase()}</p>
+                <p style={{ fontSize: '1.5rem', fontWeight: 700, color: selectedTier === i ? ACCENT : '#fff' }}>{tier.multiplier}</p>
+              </button>
             ))}
           </div>
+        </div>
 
-          <div className="mt-6 p-4 border border-gray-800 bg-gray-900/30">
-            <div className="flex items-start gap-3">
-              <AlertCircle size={16} className="text-gray-500 mt-0.5" />
-              <div className="text-sm text-gray-500">
-                <p className="mb-1">Longer lock periods earn higher weighted stake and greater share of fee distributions.</p>
-                <p>Example: 100 {currentToken.symbol.replace('$', '')} staked for {currentToken.tiers[currentToken.tiers.length - 1]?.name} = {(100 * parseFloat(currentToken.tiers[currentToken.tiers.length - 1]?.multiplier || '1')).toFixed(0)} weighted stake.</p>
-              </div>
-            </div>
+        <div style={{ background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: '12px', padding: '1.5rem' }}>
+          <h3 style={{ fontSize: '0.9rem', color: '#666', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '1rem' }}>Contracts</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem' }}>
+            <ContractLink name="Token" address={currentToken.token} />
+            <ContractLink name="Staking" address={currentToken.staking} />
+            <ContractLink name="Fee Splitter" address={currentToken.feeSplitter} />
           </div>
         </div>
 
-        <div className="border border-gray-800 bg-black p-6">
-          <div className="flex items-center gap-3 mb-6">
-            <Shield size={20} className="text-gray-400" />
-            <h3 className="text-lg font-bold">VERIFIED CONTRACTS</h3>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <ContractLink
-              name={`${currentToken.symbol.replace('$', '')} Token`}
-              address={currentToken.token}
-              label="ERC20"
-            />
-            <ContractLink
-              name="Staking Contract"
-              address={currentToken.staking}
-              label="STAKING"
-            />
-            <ContractLink
-              name="Fee Splitter"
-              address={currentToken.feeSplitter}
-              label="SPLITTER"
-            />
-          </div>
-        </div>
-
-        <div className="mt-12 flex items-center justify-center text-sm text-gray-600">
-          <div className="flex items-center">
-            <div className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: ACCENT }}></div>
-            <span className="ml-2">LIVE ON BASE</span>
-          </div>
-          <div className="flex items-center ml-8">
-            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-            <span className="ml-2">CONTRACTS VERIFIED</span>
-          </div>
+        <div style={{ textAlign: 'center', marginTop: '2rem', paddingTop: '2rem', borderTop: '1px solid #1a1a1a' }}>
+          <p style={{ fontSize: '0.8rem', color: '#444' }}>
+            Built by <a href="https://fixr.nexus" style={{ color: ACCENT, textDecoration: 'none' }}>Fixr</a> · Live on Base
+          </p>
         </div>
       </main>
     </div>
   );
 }
 
-function StatCard({
-  icon,
-  label,
-  value,
-  subtext,
-  accent = false,
-  loading = false
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  subtext: string;
-  accent?: boolean;
-  loading?: boolean;
-}) {
+function StatCard({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
   return (
-    <div
-      className="border bg-black p-6 transition-all hover:border-gray-600"
-      style={{ borderColor: accent ? ACCENT : '#1f2937' }}
-    >
-      <div className="flex items-center gap-3 mb-4">
-        <div className="text-gray-400">{icon}</div>
-        <span className="text-xs text-gray-600">{label}</span>
-      </div>
-      {loading ? (
-        <div className="h-9 w-24 bg-gray-800 animate-pulse rounded"></div>
-      ) : (
-        <p
-          className="text-3xl font-bold mb-1"
-          style={{ color: accent ? ACCENT : 'white' }}
-        >
-          {value}
-        </p>
-      )}
-      <p className="text-xs text-gray-600">{subtext}</p>
+    <div style={{
+      background: '#0a0a0a',
+      border: `1px solid ${accent ? ACCENT : '#1a1a1a'}`,
+      borderRadius: '8px',
+      padding: '1.25rem',
+    }}>
+      <p style={{ fontSize: '0.7rem', color: '#666', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</p>
+      <p style={{ fontSize: '1.75rem', fontWeight: 700, color: accent ? ACCENT : '#fff' }}>{value}</p>
     </div>
   );
 }
 
-function ContractLink({
-  name,
-  address,
-  label
-}: {
-  name: string;
-  address: string;
-  label: string;
-}) {
+function ContractLink({ name, address }: { name: string; address: string }) {
   return (
     <a
       href={`https://basescan.org/address/${address}`}
       target="_blank"
       rel="noopener noreferrer"
-      className="flex items-center justify-between p-4 border border-gray-800 hover:border-gray-600 transition-all group"
+      style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: '1rem',
+        border: '1px solid #1a1a1a',
+        borderRadius: '8px',
+        textDecoration: 'none',
+        color: '#fff',
+      }}
     >
       <div>
-        <p className="text-sm font-bold text-white mb-1">{name}</p>
-        <p className="text-xs text-gray-600 font-mono">
-          {address.slice(0, 6)}...{address.slice(-4)}
-        </p>
+        <p style={{ fontWeight: 600, marginBottom: '0.25rem' }}>{name}</p>
+        <p style={{ fontSize: '0.7rem', color: '#666' }}>{address.slice(0, 6)}...{address.slice(-4)}</p>
       </div>
-      <div className="flex items-center gap-2">
-        <span className="text-xs px-2 py-1 border border-gray-800 text-gray-500">{label}</span>
-        <ArrowUpRight size={14} className="text-gray-600 group-hover:text-white transition-colors" />
-      </div>
+      <span style={{ color: '#666' }}>→</span>
     </a>
   );
 }
