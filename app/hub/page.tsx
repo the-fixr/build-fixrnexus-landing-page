@@ -25,6 +25,7 @@ interface TokenConfig {
   tiers: { name: string; multiplier: string; duration: number; index: number }[];
   stakersShare: number;
   treasuryShare: number;
+  logoUrl?: string;
 }
 
 const TOKENS: TokenConfig[] = [
@@ -39,6 +40,7 @@ const TOKENS: TokenConfig[] = [
     decimals: 18,
     stakersShare: 70,
     treasuryShare: 30,
+    logoUrl: '/clawg-logo.png',
     tiers: [
       { name: '1 Day', multiplier: '0.5x', duration: 86400, index: 0 },
       { name: '7 Days', multiplier: '1.0x', duration: 604800, index: 1 },
@@ -296,20 +298,33 @@ export default function HubPage() {
 
         <div style={{ textAlign: 'center', marginBottom: '3rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1rem', marginBottom: '0.5rem' }}>
-            <div style={{
-              width: '56px',
-              height: '56px',
-              borderRadius: '50%',
-              background: `linear-gradient(135deg, ${ACCENT} 0%, #6366f1 100%)`,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '1.5rem',
-              fontWeight: 700,
-              boxShadow: `0 0 20px ${ACCENT_GLOW}`,
-            }}>
-              {currentToken.symbol.replace('$', '').charAt(0)}
-            </div>
+            {currentToken.logoUrl ? (
+              <img
+                src={currentToken.logoUrl}
+                alt={currentToken.name}
+                style={{
+                  width: '56px',
+                  height: '56px',
+                  borderRadius: '50%',
+                  boxShadow: `0 0 20px ${ACCENT_GLOW}`,
+                }}
+              />
+            ) : (
+              <div style={{
+                width: '56px',
+                height: '56px',
+                borderRadius: '50%',
+                background: `linear-gradient(135deg, ${ACCENT} 0%, #6366f1 100%)`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '1.5rem',
+                fontWeight: 700,
+                boxShadow: `0 0 20px ${ACCENT_GLOW}`,
+              }}>
+                {currentToken.symbol.replace('$', '').charAt(0)}
+              </div>
+            )}
             <h2 style={{ fontSize: '3rem', fontWeight: 700, margin: 0 }}>
               {currentToken.symbol}
             </h2>
