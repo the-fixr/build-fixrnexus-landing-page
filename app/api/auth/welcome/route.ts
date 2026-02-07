@@ -12,7 +12,7 @@ export async function POST(request: Request) {
     const { email, username } = await request.json();
 
     const { data, error } = await resend.emails.send({
-      from: process.env.RESEND_FROM_EMAIL || 'noreply@feeds.review',
+      from: process.env.RESEND_FROM_EMAIL || 'fixr@fixr.nexus',
       to: email,
       subject: 'Welcome to FEEDS - Decentralized Oracle Network',
       html: `
