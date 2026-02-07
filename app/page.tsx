@@ -101,6 +101,13 @@ export default function Home() {
 
           <div className="flex items-center" style={{ gap: '24px' }}>
             <a
+              href="/hub"
+              className="text-sm transition-colors"
+              style={{ color: 'rgb(255, 0, 110)' }}
+            >
+              $FIXR
+            </a>
+            <a
               href="/marketplace"
               className="text-sm text-gray-400 hover:text-white transition-colors"
             >
