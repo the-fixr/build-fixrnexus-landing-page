@@ -238,7 +238,7 @@ export async function buildStakeInstruction(
       { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
     ],
     programId: CLAWG_STAKING_PROGRAM_ID,
-    data,
+    data: Buffer.from(data),
   });
 }
 
@@ -265,7 +265,7 @@ export async function buildUnstakeInstruction(
       { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
     ],
     programId: CLAWG_STAKING_PROGRAM_ID,
-    data,
+    data: Buffer.from(data),
   });
 }
 
