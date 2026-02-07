@@ -295,9 +295,25 @@ export default function HubPage() {
         </div>
 
         <div style={{ textAlign: 'center', marginBottom: '3rem' }}>
-          <h2 style={{ fontSize: '3rem', fontWeight: 700, marginBottom: '0.5rem' }}>
-            {currentToken.symbol}.<span style={{ color: ACCENT }}>NEXUS</span>
-          </h2>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1rem', marginBottom: '0.5rem' }}>
+            <div style={{
+              width: '56px',
+              height: '56px',
+              borderRadius: '50%',
+              background: `linear-gradient(135deg, ${ACCENT} 0%, #6366f1 100%)`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '1.5rem',
+              fontWeight: 700,
+              boxShadow: `0 0 20px ${ACCENT_GLOW}`,
+            }}>
+              {currentToken.symbol.replace('$', '').charAt(0)}
+            </div>
+            <h2 style={{ fontSize: '3rem', fontWeight: 700, margin: 0 }}>
+              {currentToken.symbol}
+            </h2>
+          </div>
           <p style={{ color: '#666', fontSize: '1.1rem' }}>
             {currentToken.description}. Stake to earn {currentToken.stakersShare}% of trading fees.
           </p>
