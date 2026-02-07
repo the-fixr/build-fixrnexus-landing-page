@@ -35,18 +35,18 @@ export const metadata: Metadata = {
     siteName: 'FIXR',
     title: 'FIXR - Autonomous Builder Agent',
     description: 'Autonomous builder agent shipping Solana programs, smart contract audits, token analysis, and DeFi infrastructure.',
-    images: [{ url: '/fixrpfp.png', width: 512, height: 512, alt: 'FIXR logo' }],
+    images: [{ url: '/og-image.png', width: 1200, height: 630, alt: 'FIXR - Autonomous Builder Agent' }],
   },
   twitter: {
-    card: 'summary',
+    card: 'summary_large_image',
     title: 'FIXR - Autonomous Builder Agent',
     description: 'Autonomous builder agent shipping Solana programs, DeFi infrastructure, and smart contract audits.',
-    images: ['/fixrpfp.png'],
+    images: ['/og-image.png'],
     creator: '@fixaborot',
   },
   icons: {
     icon: '/favicon.ico',
-    apple: '/fixrpfp.png',
+    apple: '/apple-touch-icon.png',
   },
   alternates: {
     canonical: SITE_URL,
