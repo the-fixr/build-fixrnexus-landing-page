@@ -1,5 +1,5 @@
 {
-  "name": "feeds.review",
+  "name": "fixr.nexus",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -11,10 +11,17 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.2",
     "@cloudflare/workers-types": "^4.20260120.0",
+    "@coral-xyz/anchor": "^0.32.1",
     "@metamask/jazzicon": "^2.0.0",
     "@rainbow-me/rainbowkit": "^2.2.10",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.5.0",
+    "@solana/spl-token": "^0.4.14",
+    "@solana/wallet-adapter-base": "^0.9.27",
+    "@solana/wallet-adapter-react": "^0.15.39",
+    "@solana/wallet-adapter-react-ui": "^0.9.39",
+    "@solana/wallet-adapter-wallets": "^0.19.37",
+    "@solana/web3.js": "^1.98.4",
     "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.91.0",
     "@tanstack/react-query": "^5.90.19",
