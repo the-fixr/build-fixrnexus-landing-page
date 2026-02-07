@@ -210,6 +210,18 @@ export default function HubPage() {
     if (activeChain !== 'solana') return;
 
     const fetchSolanaData = async () => {
+      // Fetch balance independently so it works even if staking program isn't initialized
+      if (publicKey) {
+        try {
+          const tokenAccount = await getAssociatedTokenAddress(CLAWG_MINT, publicKey);
+          const balance = await connection.getTokenAccountBalance(tokenAccount);
+          setSolanaBalance(BigInt(balance.value.amount));
+        } catch {
+          setSolanaBalance(BigInt(0));
+        }
+      }
+
+      // Fetch staking state separately
       try {
         const state = await fetchStakingState(connection);
         setSolanaState(state);
@@ -217,23 +229,14 @@ export default function HubPage() {
         if (publicKey) {
           const userAccount = await fetchUserAccount(connection, publicKey);
           setSolanaUserAccount(userAccount);
-
-          // Fetch CLAWG balance
-          try {
-            const tokenAccount = await getAssociatedTokenAddress(CLAWG_MINT, publicKey);
-            const balance = await connection.getTokenAccountBalance(tokenAccount);
-            setSolanaBalance(BigInt(balance.value.amount));
-          } catch {
-            setSolanaBalance(BigInt(0));
-          }
         }
       } catch (err) {
-        console.error('Error fetching Solana data:', err);
+        console.error('Error fetching Solana staking data:', err);
       }
     };
 
     fetchSolanaData();
-    const interval = setInterval(fetchSolanaData, 10000);
+    const interval = setInterval(fetchSolanaData, 30000);
     return () => clearInterval(interval);
   }, [activeChain, connection, publicKey]);
 
