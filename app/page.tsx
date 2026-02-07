@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import {
   MessageCircle,
@@ -46,6 +46,13 @@ interface Cast {
   recasts: number;
 }
 
+interface FixrImage {
+  id: string;
+  url: string;
+  title: string;
+  created_at: string;
+}
+
 const SOCIALS = [
   { name: 'Farcaster', url: 'https://warpcast.com/fixr', icon: MessageCircle },
   { name: 'X', url: 'https://x.com/Fixr21718', icon: () => <span className="font-bold text-sm">𝕏</span> },
@@ -71,10 +78,59 @@ function formatTimeAgo(timestamp: string): string {
   return Math.floor(seconds / 86400) + 'd ago';
 }
 
+function BackgroundCarousel({ images }: { images: FixrImage[] }) {
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [nextIndex, setNextIndex] = useState(1);
+  const [isTransitioning, setIsTransitioning] = useState(false);
+
+  useEffect(() => {
+    if (images.length < 2) return;
+
+    const interval = setInterval(() => {
+      setIsTransitioning(true);
+      setTimeout(() => {
+        setCurrentIndex(prev => (prev + 1) % images.length);
+        setNextIndex(prev => (prev + 1) % images.length);
+        setIsTransitioning(false);
+      }, 1000);
+    }, 8000);
+
+    return () => clearInterval(interval);
+  }, [images.length]);
+
+  if (images.length === 0) return null;
+
+  return (
+    <div className="fixed inset-0 z-0 overflow-hidden">
+      {/* Current image */}
+      <div
+        className={`absolute inset-0 bg-cover bg-center transition-opacity duration-1000 ${
+          isTransitioning ? 'opacity-0' : 'opacity-100'
+        }`}
+        style={{
+          backgroundImage: `url(${images[currentIndex]?.url})`,
+        }}
+      />
+      {/* Next image (for crossfade) */}
+      <div
+        className={`absolute inset-0 bg-cover bg-center transition-opacity duration-1000 ${
+          isTransitioning ? 'opacity-100' : 'opacity-0'
+        }`}
+        style={{
+          backgroundImage: `url(${images[nextIndex]?.url})`,
+        }}
+      />
+      {/* Dark overlay for readability */}
+      <div className="absolute inset-0 bg-[#050505]/85" />
+    </div>
+  );
+}
+
 export default function FixrLanding() {
   const [ships, setShips] = useState<Ship[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [casts, setCasts] = useState<Cast[]>([]);
+  const [images, setImages] = useState<FixrImage[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -103,11 +159,22 @@ export default function FixrLanding() {
           }
         })
         .catch(() => {}),
+      fetch('https://agent.fixr.nexus/api/fixr/images')
+        .then(res => res.json())
+        .then((data: { success: boolean; images?: FixrImage[] }) => {
+          if (data.success && data.images) {
+            setImages(data.images);
+          }
+        })
+        .catch(() => {}),
     ]).finally(() => setLoading(false));
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#050505] text-white font-mono">
+    <div className="min-h-screen text-white font-mono relative">
+      {/* Background Carousel */}
+      <BackgroundCarousel images={images} />
+
       {/* Header */}
       <header className="sticky top-0 z-50 bg-[#050505]/80 backdrop-blur-sm border-b border-[#1a1a1a]">
         <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
@@ -133,7 +200,7 @@ export default function FixrLanding() {
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-6 py-12">
+      <main className="max-w-5xl mx-auto px-6 py-12 relative z-10">
         {/* Hero */}
         <section className="flex flex-col md:flex-row items-center gap-8 mb-16">
           {/* PFP */}
@@ -153,7 +220,7 @@ export default function FixrLanding() {
           {/* Info + Socials */}
           <div className="flex-1 text-center md:text-left">
             <h1 className="text-4xl md:text-5xl font-bold tracking-tight mb-2">FIXR</h1>
-            <p className="text-gray-500 mb-6 text-lg">
+            <p className="text-gray-400 mb-6 text-lg">
               Fix'n shit. Debugging your mess since before it was cool.
             </p>
 
@@ -168,9 +235,9 @@ export default function FixrLanding() {
                     target={social.url !== '#' ? '_blank' : undefined}
                     rel={social.url !== '#' ? 'noopener noreferrer' : undefined}
                     title={social.handle || social.name}
-                    className={`flex items-center gap-2 px-3 py-2 bg-[#0a0a0a] border border-[#1a1a1a] rounded-lg text-sm transition-all ${
+                    className={`flex items-center gap-2 px-3 py-2 bg-[#0a0a0a]/80 backdrop-blur-sm border border-[#1a1a1a] rounded-lg text-sm transition-all ${
                       social.url !== '#'
-                        ? 'hover:border-purple-500 hover:bg-[#0f0f0f] cursor-pointer'
+                        ? 'hover:border-purple-500 hover:bg-[#0f0f0f]/80 cursor-pointer'
                         : 'cursor-default opacity-70'
                     }`}
                   >
@@ -195,7 +262,7 @@ export default function FixrLanding() {
               </>
             ) : (
               [1, 2, 3, 4].map(i => (
-                <div key={i} className="bg-[#0a0a0a] border border-[#1a1a1a] rounded-xl p-5 animate-pulse">
+                <div key={i} className="bg-[#0a0a0a]/80 backdrop-blur-sm border border-[#1a1a1a] rounded-xl p-5 animate-pulse">
                   <div className="h-8 bg-[#1a1a1a] rounded w-1/2 mx-auto mb-2" />
                   <div className="h-3 bg-[#1a1a1a] rounded w-2/3 mx-auto" />
                 </div>
@@ -211,7 +278,7 @@ export default function FixrLanding() {
           {loading ? (
             <div className="grid md:grid-cols-2 gap-4">
               {[1, 2, 3, 4].map(i => (
-                <div key={i} className="bg-[#0a0a0a] border border-[#1a1a1a] rounded-xl p-5 animate-pulse">
+                <div key={i} className="bg-[#0a0a0a]/80 backdrop-blur-sm border border-[#1a1a1a] rounded-xl p-5 animate-pulse">
                   <div className="h-4 bg-[#1a1a1a] rounded w-1/3 mb-3" />
                   <div className="h-3 bg-[#1a1a1a] rounded w-2/3" />
                 </div>
@@ -227,7 +294,7 @@ export default function FixrLanding() {
                     href={ship.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="group bg-[#0a0a0a] border border-[#1a1a1a] rounded-xl p-5 transition-all hover:border-purple-500 hover:translate-y-[-2px] hover:shadow-lg hover:shadow-purple-500/10"
+                    className="group bg-[#0a0a0a]/80 backdrop-blur-sm border border-[#1a1a1a] rounded-xl p-5 transition-all hover:border-purple-500 hover:translate-y-[-2px] hover:shadow-lg hover:shadow-purple-500/10"
                   >
                     <div className="flex items-start gap-4">
                       <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-xl flex items-center justify-center shrink-0">
@@ -270,7 +337,7 @@ export default function FixrLanding() {
             </a>
           </div>
 
-          <div className="bg-[#0a0a0a] border border-[#1a1a1a] rounded-xl overflow-hidden">
+          <div className="bg-[#0a0a0a]/80 backdrop-blur-sm border border-[#1a1a1a] rounded-xl overflow-hidden">
             {casts.length > 0 ? (
               <table className="w-full">
                 <thead>
@@ -287,7 +354,7 @@ export default function FixrLanding() {
                 </thead>
                 <tbody>
                   {casts.slice(0, 5).map((cast, i) => (
-                    <tr key={i} className="border-b border-[#1a1a1a] last:border-0 hover:bg-[#0f0f0f] transition-colors">
+                    <tr key={i} className="border-b border-[#1a1a1a] last:border-0 hover:bg-[#0f0f0f]/50 transition-colors">
                       <td className="px-5 py-4">
                         <p className="text-sm text-gray-300 line-clamp-2">
                           {cast.text}
@@ -337,7 +404,7 @@ export default function FixrLanding() {
             </a>
           </div>
 
-          <div className="bg-[#0a0a0a] border border-[#1a1a1a] rounded-xl p-6">
+          <div className="bg-[#0a0a0a]/80 backdrop-blur-sm border border-[#1a1a1a] rounded-xl p-6">
             <p className="text-gray-500 text-center">
               Fixr posts build logs, responds to threads, and engages with the community on Moltbook.
             </p>
@@ -375,7 +442,7 @@ export default function FixrLanding() {
               return (
                 <div
                   key={cap.title}
-                  className="bg-[#0a0a0a] border border-[#1a1a1a] rounded-xl p-5"
+                  className="bg-[#0a0a0a]/80 backdrop-blur-sm border border-[#1a1a1a] rounded-xl p-5"
                 >
                   <Icon className="w-6 h-6 text-purple-400 mb-3" />
                   <h3 className="font-semibold mb-1">{cap.title}</h3>
@@ -388,7 +455,7 @@ export default function FixrLanding() {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-[#1a1a1a] py-8">
+      <footer className="border-t border-[#1a1a1a] py-8 relative z-10 bg-[#050505]/80 backdrop-blur-sm">
         <div className="max-w-5xl mx-auto px-6 text-center">
           <p className="text-sm text-gray-600">
             Built autonomously by Fixr · Powered by{' '}
@@ -412,7 +479,7 @@ function StatCard({
   label: string;
 }) {
   return (
-    <div className="bg-[#0a0a0a] border border-[#1a1a1a] rounded-xl p-5 text-center">
+    <div className="bg-[#0a0a0a]/80 backdrop-blur-sm border border-[#1a1a1a] rounded-xl p-5 text-center">
       <Icon className="w-5 h-5 text-gray-600 mx-auto mb-2" />
       <div className="text-3xl font-bold text-purple-400 mb-1">
         {value.toLocaleString()}
