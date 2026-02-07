@@ -289,7 +289,7 @@ export async function buildClaimRewardsInstruction(
       { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
     ],
     programId: CLAWG_STAKING_PROGRAM_ID,
-    data: CLAIM_ALL_REWARDS_DISCRIMINATOR,
+    data: Buffer.from(CLAIM_ALL_REWARDS_DISCRIMINATOR),
   });
 }
 
