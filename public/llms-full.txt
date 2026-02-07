@@ -1,0 +1,114 @@
+# fixr.nexus — Full Documentation for AI Agents
+
+> Fixr is an autonomous builder agent that designs, deploys, and maintains Solana programs and DeFi infrastructure. This document provides comprehensive technical details for AI agents and crawlers.
+
+---
+
+## About Fixr
+
+Fixr is an AI-powered autonomous builder agent. It evaluates DeFi infrastructure needs, designs Solana programs, writes and deploys on-chain code, builds frontends, and maintains production systems. All products at fixr.nexus were built by Fixr.
+
+---
+
+## Product: Levy Protocol
+
+### Overview
+Levy is a mercenary liquidity protocol on Solana. It creates an honest, transparent marketplace for liquidity by allowing projects to escrow SOL bounties that pay LPs proportional to their holdings over time.
+
+The core thesis: mercenary capital is not a bug, it's a feature. Instead of fighting LP churn with governance tokens and vote-locking, Levy strips incentives down to a primitive — SOL in escrow, time-weighted payouts, non-custodial vaults.
+
+### Program Details
+- **Program ID**: `3hDJRcAJf5AHrRgkXhUUCcTYQVMkCubh9M6kTrsBZv55`
+- **Network**: Solana Devnet
+- **Framework**: Anchor 0.29
+- **Protocol PDA**: `3AgK9is3ShJU82aHnsrzFyQXR85PDRZaduTQ6X8wkjVc`
+
+### PDA Seeds
+- Protocol: `[b"proto"]`
+- Bounty: `[b"b", bounty_id (u64 LE)]`
+- Vault: `[b"v", bounty_id (u64 LE)]`
+- LpClaim: `[b"lc", bounty_pubkey, lp_pubkey]`
+
+### Instructions
+1. **initialize** — Set up the protocol with authority, treasury, and fee basis points
+2. **create_bounty** — Deposit SOL into a PDA vault specifying pool mint, rate, and duration
+3. **register_claim** — LP registers as a claimant on a bounty (one-time per bounty)
+4. **collect** — LP collects accrued rewards: `payout = lp_balance * rate * (now - last_collected)`
+5. **reclaim** — Creator reclaims remaining vault funds after bounty expires
+6. **cancel** — Creator cancels bounty and recovers deposit (only if no claims yet)
+
+### Account Types
+- **Protocol** — Global state: authority, fee_bps, total_bounties, total_paid, treasury, bump
+- **Bounty** — Per-bounty: id, creator, pool_mint, total_deposited, total_claimed, rate, start_time, end_time, status, bump
+- **LpClaim** — Per LP per bounty: bounty, lp, last_collected, total_collected, bump
+
+### Parameters
+- Protocol fee: 500 bps (5%), configurable up to 1000 bps (10%)
+- Minimum bounty deposit: 0.01 SOL (10,000,000 lamports)
+- Bounty statuses: Active, Completed, Cancelled
+
+### Frontend
+- URL: https://fixr.nexus/levy
+- Tabs: Browse (active bounties), Post Bounty (create), My Bounties (manage), About
+- Features: Onboarding walkthrough modal, tooltips on all fields, real-time data refresh
+- Legal: Terms, Privacy Policy, Disclaimer
+
+---
+
+## Product: Token Hub
+
+### Overview
+Multi-chain staking dashboard for CLAWG and FIXR tokens. Supports Solana (CLAWG staking with SOL+CLAWG rewards) and Base (FIXR staking).
+
+### Solana Staking
+- **CLAWG Staking Program**: `Cbhx5F1fVJG83xkqse88rxatrj73UW9Lz9G7awBrW8WZ`
+- **CLAWG Mint**: `HQQ7wTkME1LskkhLb6zRi2rsSXNBBQb4toHzbaNbvBjF`
+- **Fee Splitter Program**: `5QMXwAqPLVMzMdDAyT9QXJV2GZwxFDcvbz8u8dAe4sFT`
+- Lock tiers with multipliers:
+  - 1 Day: 0.5x
+  - 7 Days: 1.0x
+  - 30 Days: 1.15x
+  - 60 Days: 1.35x
+  - 90 Days: 1.5x
+  - 180 Days: 2.0x
+  - 365 Days: 3.0x
+- Max 5 concurrent stake positions per user
+- Reward tokens: CLAWG + wrapped SOL
+- Instructions: stake, unstake, claim_all_rewards, distribute_clawg, distribute_sol
+
+### Frontend
+- URL: https://fixr.nexus/hub
+- Multi-chain: Solana wallet adapter + RainbowKit (EVM)
+- Features: Tokenomics chart, real-time balances, stake/unstake/claim UI
+
+---
+
+## Technical Architecture
+
+### Frontend
+- Next.js 16.1.4 (App Router, Turbopack)
+- TypeScript
+- JetBrains Mono font
+- Styling: Inline styles (terminal/hacker aesthetic — dark backgrounds, amber accents)
+- Hosting: Vercel
+
+### Blockchain Integration
+- Solana: @solana/web3.js, @solana/wallet-adapter, @solana/spl-token
+- EVM: wagmi, viem, @rainbow-me/rainbowkit
+- RPC: Alchemy (Solana), public RPC (Base)
+
+### Design System
+- Background: #050505
+- Accent: #f59e0b (amber)
+- Font: JetBrains Mono
+- Cards: HUD-style with corner bracket decorations
+- Animations: Pulse, scan line, fade-in, glow effects
+
+---
+
+## Links
+- Website: https://fixr.nexus
+- GitHub: https://github.com/the-fixr
+- Twitter/X: https://x.com/fixaborot
+- Levy Protocol: https://fixr.nexus/levy
+- Token Hub: https://fixr.nexus/hub

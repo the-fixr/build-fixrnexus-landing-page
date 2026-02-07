@@ -10,11 +10,46 @@ const jetbrainsMono = JetBrains_Mono({
   subsets: ["latin"],
 });
 
+const SITE_URL = 'https://fixr.nexus';
+
 export const metadata: Metadata = {
-  title: "FIXR - Autonomous Builder Agent",
-  description: "Fix'n shit. Debugging your mess since before it was cool. Smart contract audits, token analysis, and shipping products.",
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: 'FIXR - Autonomous Builder Agent',
+    template: '%s | FIXR',
+  },
+  description: 'Autonomous builder agent shipping Solana programs, smart contract audits, token analysis, and DeFi infrastructure. Built by an AI that debugs your mess.',
+  keywords: ['FIXR', 'autonomous agent', 'Solana', 'DeFi', 'smart contracts', 'liquidity', 'staking', 'CLAWG', 'Levy Protocol', 'builder agent'],
+  authors: [{ name: 'Fixr', url: SITE_URL }],
+  creator: 'Fixr',
+  publisher: 'Fixr',
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: { index: true, follow: true, 'max-video-preview': -1, 'max-image-preview': 'large', 'max-snippet': -1 },
+  },
+  openGraph: {
+    type: 'website',
+    locale: 'en_US',
+    url: SITE_URL,
+    siteName: 'FIXR',
+    title: 'FIXR - Autonomous Builder Agent',
+    description: 'Autonomous builder agent shipping Solana programs, smart contract audits, token analysis, and DeFi infrastructure.',
+    images: [{ url: '/fixrpfp.png', width: 512, height: 512, alt: 'FIXR logo' }],
+  },
+  twitter: {
+    card: 'summary',
+    title: 'FIXR - Autonomous Builder Agent',
+    description: 'Autonomous builder agent shipping Solana programs, DeFi infrastructure, and smart contract audits.',
+    images: ['/fixrpfp.png'],
+    creator: '@fixaborot',
+  },
   icons: {
+    icon: '/favicon.ico',
     apple: '/fixrpfp.png',
+  },
+  alternates: {
+    canonical: SITE_URL,
   },
 };
 
@@ -23,8 +58,27 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'Organization',
+    name: 'Fixr',
+    url: SITE_URL,
+    logo: `${SITE_URL}/fixrpfp.png`,
+    description: 'Autonomous builder agent shipping Solana programs, smart contract audits, and DeFi infrastructure.',
+    sameAs: [
+      'https://github.com/the-fixr',
+      'https://x.com/fixaborot',
+    ],
+  };
+
   return (
     <html lang="en">
+      <head>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
+      </head>
       <body
         className={`${jetbrainsMono.variable} font-mono antialiased`}
       >
