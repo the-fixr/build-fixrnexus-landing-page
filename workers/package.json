@@ -1,0 +1,25 @@
+{
+  "name": "feeds-validators",
+  "version": "1.0.0",
+  "description": "FEEDS Oracle Validators - Cloudflare Workers",
+  "main": "validator-template.ts",
+  "scripts": {
+    "deploy:all": "wrangler deploy --env validator-1 && wrangler deploy --env validator-2 && wrangler deploy --env validator-3 && wrangler deploy --env validator-4 && wrangler deploy --env validator-5",
+    "deploy:1": "wrangler deploy --env validator-1",
+    "deploy:2": "wrangler deploy --env validator-2",
+    "deploy:3": "wrangler deploy --env validator-3",
+    "deploy:4": "wrangler deploy --env validator-4",
+    "deploy:5": "wrangler deploy --env validator-5"
+  },
+  "keywords": ["oracle", "cloudflare", "base", "ethereum"],
+  "author": "",
+  "license": "MIT",
+  "type": "commonjs",
+  "dependencies": {
+    "ethers": "^6.16.0"
+  },
+  "devDependencies": {
+    "wrangler": "^3.0.0",
+    "@cloudflare/workers-types": "^4.20240208.0"
+  }
+}
