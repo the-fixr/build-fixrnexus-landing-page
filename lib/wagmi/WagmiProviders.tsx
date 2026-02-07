@@ -6,6 +6,7 @@ import { RainbowKitProvider, darkTheme } from '@rainbow-me/rainbowkit';
 import { config } from './config';
 import { useState } from 'react';
 import '@rainbow-me/rainbowkit/styles.css';
+import { SolanaProviders } from '../solana/SolanaProviders';
 
 export function WagmiProviders({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient());
@@ -22,7 +23,9 @@ export function WagmiProviders({ children }: { children: React.ReactNode }) {
             overlayBlur: 'small',
           })}
         >
-          {children}
+          <SolanaProviders>
+            {children}
+          </SolanaProviders>
         </RainbowKitProvider>
       </QueryClientProvider>
     </WagmiProvider>
