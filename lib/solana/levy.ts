@@ -204,15 +204,12 @@ export function buildCollectInstruction(
   bountyId: bigint,
   bountyPda: PublicKey,
   treasury: PublicKey,
-  lpBalance: bigint,
+  lpTokenAccount: PublicKey,
 ): TransactionInstruction {
   const [vault] = getVaultPDA(bountyId);
   const [lpClaim] = getLpClaimPDA(bountyPda, lp);
 
-  const data = Buffer.alloc(16);
-  COLLECT_DISC.copy(data, 0);
-  data.writeBigUInt64LE(lpBalance, 8);
-
+  // No args — LP balance is read on-chain from lp_token_account
   return new TransactionInstruction({
     programId: LEVY_PROGRAM_ID,
     keys: [
@@ -221,9 +218,10 @@ export function buildCollectInstruction(
       { pubkey: lpClaim, isSigner: false, isWritable: true },
       { pubkey: vault, isSigner: false, isWritable: true },
       { pubkey: treasury, isSigner: false, isWritable: true },
+      { pubkey: lpTokenAccount, isSigner: false, isWritable: false },
       { pubkey: lp, isSigner: true, isWritable: true },
     ],
-    data,
+    data: Buffer.from(COLLECT_DISC),
   });
 }
 
