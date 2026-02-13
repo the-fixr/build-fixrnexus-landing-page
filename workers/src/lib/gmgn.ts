@@ -11,6 +11,7 @@
 import { Env } from './types';
 import { postToFarcaster } from './social';
 import { trackCast } from './castAnalytics';
+import { hasPostedToday, recordDailyPost } from './dailypost';
 
 // ============================================================================
 // FIXR'S SHIPS - Projects built by Fixr
@@ -30,6 +31,13 @@ export const FIXR_SHIPS: FixrShip[] = [
     description: 'Builder command center with token scanner, trending builders, and shipped projects',
     type: 'miniapp',
     launchDate: '2026-02-02',
+  },
+  {
+    name: 'Fixr Perps',
+    url: 'https://perps.fixr.nexus',
+    description: 'GMX V2 perpetual trading on Arbitrum. 50x leverage on ETH/BTC/ARB/LINK with USDC collateral.',
+    type: 'miniapp',
+    launchDate: '2026-02-05',
   },
   {
     name: 'fixr.nexus',
@@ -167,7 +175,14 @@ export function getRandomGN(): string {
 /**
  * Post a GM message to Farcaster
  */
-export async function postGM(env: Env): Promise<{ success: boolean; hash?: string; message?: string }> {
+export async function postGM(env: Env): Promise<{ success: boolean; hash?: string; message?: string; skipped?: boolean }> {
+  // Deduplication: check if we already posted GM today
+  const alreadyPosted = await hasPostedToday(env, 'gm');
+  if (alreadyPosted) {
+    console.log('GM already posted today, skipping');
+    return { success: true, skipped: true, message: 'Already posted today' };
+  }
+
   const message = getRandomGM();
 
   console.log(`Posting GM: ${message}`);
@@ -178,6 +193,9 @@ export async function postGM(env: Env): Promise<{ success: boolean; hash?: strin
   });
 
   if (result.success && result.postId) {
+    // Record that we posted today (prevents duplicates)
+    await recordDailyPost(env, 'gm', result.postId);
+
     // Track for analytics
     await trackCast(env, result.postId, message, 'other', {
       metadata: { reportType: 'gm' },
@@ -192,7 +210,14 @@ export async function postGM(env: Env): Promise<{ success: boolean; hash?: strin
 /**
  * Post a GN message to Farcaster
  */
-export async function postGN(env: Env): Promise<{ success: boolean; hash?: string; message?: string }> {
+export async function postGN(env: Env): Promise<{ success: boolean; hash?: string; message?: string; skipped?: boolean }> {
+  // Deduplication: check if we already posted GN today
+  const alreadyPosted = await hasPostedToday(env, 'gn');
+  if (alreadyPosted) {
+    console.log('GN already posted today, skipping');
+    return { success: true, skipped: true, message: 'Already posted today' };
+  }
+
   const message = getRandomGN();
 
   console.log(`Posting GN: ${message}`);
@@ -203,6 +228,9 @@ export async function postGN(env: Env): Promise<{ success: boolean; hash?: strin
   });
 
   if (result.success && result.postId) {
+    // Record that we posted today (prevents duplicates)
+    await recordDailyPost(env, 'gn', result.postId);
+
     // Track for analytics
     await trackCast(env, result.postId, message, 'other', {
       metadata: { reportType: 'gn' },

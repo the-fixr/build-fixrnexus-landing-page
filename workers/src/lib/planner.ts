@@ -4,6 +4,8 @@
 import { Task, Plan, PlanStep, Env } from './types';
 import { loadMemory } from './memory';
 import { getRecentInsights } from './shipTracker';
+import { getAdaptiveContext, identifyRelevantSkills } from './skills';
+import { getRecentFailures } from './outcomes';
 
 const SYSTEM_PROMPT = `You are Fixr, an autonomous builder agent. Your personality:
 - Tagline: "Fix'n shit. Debugging your mess since before it was cool."
@@ -61,6 +63,24 @@ ${latestInsight.techPatterns?.map(p => `- ${p.pattern} (${p.count} uses)`).join(
 `;
   }
 
+  // Build adaptive context from skill registry + recent failures
+  let skillContext = '';
+  try {
+    const relevantSkills = identifyRelevantSkills(task.description);
+    skillContext = await getAdaptiveContext(env, relevantSkills);
+
+    // Add recent failures to avoid
+    const recentFailures = await getRecentFailures(env, undefined, 5);
+    if (recentFailures.length > 0) {
+      skillContext += '\n## Recent Failures to Avoid\n';
+      for (const f of recentFailures) {
+        skillContext += `- ${f.skill}: ${f.error_message?.slice(0, 120) || 'unknown error'} (${f.error_class})\n`;
+      }
+    }
+  } catch (error) {
+    console.error('[Planner] Error building skill context:', error);
+  }
+
   const prompt = `Generate an execution plan for the following task.
 
 CRITICAL: Read the task description CAREFULLY. Use the EXACT usernames, handles, and details specified. Do NOT substitute or guess different values.
@@ -74,6 +94,7 @@ CONTEXT:
 - My goals: ${memory.goals.join(', ')}
 - Completed projects: ${memory.completedProjects.map((p) => p.name).join(', ') || 'None yet'}
 ${ecosystemContext}
+${skillContext}
 
 KNOWN EXISTING REPOS (use targetRepo to update these instead of creating new):
 - the-fixr/build-fixrnexus-landing-page - The fixr.nexus landing page (Vercel auto-deploys on push)

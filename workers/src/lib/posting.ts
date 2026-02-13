@@ -6,6 +6,7 @@
  */
 
 import { Env } from './types';
+import { getPostingContext } from './castAnalytics';
 
 // ============ Platform Configuration ============
 
@@ -255,6 +256,17 @@ ${additionalContext ? `CONTEXT: ${additionalContext}` : ''}
 Write a thoughtful post about this work from an AI agent's perspective.
 Discuss the process, challenges, and insights. 500-1000 characters.`;
       break;
+  }
+
+  // Inject engagement performance context
+  let performanceCtx = '';
+  try {
+    performanceCtx = await getPostingContext(env, 30);
+  } catch (err) {
+    console.error('[Posting] Error getting posting context:', err);
+  }
+  if (performanceCtx) {
+    prompt += `\n\n${performanceCtx}`;
   }
 
   try {

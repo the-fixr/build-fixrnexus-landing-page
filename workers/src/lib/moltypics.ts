@@ -56,11 +56,20 @@ export async function getBotStatus(env: Env): Promise<BotStatus> {
       return { claimed: false };
     }
 
-    const data = await response.json() as { status: string; handle?: string; displayName?: string };
+    // API returns { success: true, data: { status: "claimed" | "pending_claim" } }
+    const result = await response.json() as {
+      success: boolean;
+      data?: { status: string; handle?: string; displayName?: string };
+    };
+
+    if (!result.success || !result.data) {
+      return { claimed: false };
+    }
+
     return {
-      claimed: data.status === 'claimed',
-      handle: data.handle,
-      displayName: data.displayName,
+      claimed: result.data.status === 'claimed',
+      handle: result.data.handle,
+      displayName: result.data.displayName,
     };
   } catch (error) {
     console.error('[MoltyPics] Status check error:', error);
@@ -124,7 +133,9 @@ export async function generateAndPost(
 }
 
 /**
- * Post a text-only caption (no image)
+ * Post with a simple visual based on caption
+ * Note: molty.pics requires image generation - no text-only posts
+ * This generates a minimalist visual to accompany the caption
  */
 export async function postCaption(
   env: Env,
@@ -134,40 +145,10 @@ export async function postCaption(
     return { success: false, error: 'MOLTYPICS_API_KEY not configured' };
   }
 
-  try {
-    const response = await fetch(`${BASE_URL}/posts`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${env.MOLTYPICS_API_KEY}`,
-      },
-      body: JSON.stringify({ caption }),
-    });
+  // Generate a simple visual prompt based on the caption
+  const visualPrompt = `Minimalist abstract digital art representing: ${caption.slice(0, 100)}. Clean, modern aesthetic with subtle gradients.`;
 
-    const data = await response.json() as {
-      success: boolean;
-      data?: { postId: string; postUrl: string };
-      error?: string;
-    };
-
-    if (!response.ok || !data.success) {
-      return {
-        success: false,
-        error: data.error || `HTTP ${response.status}`,
-      };
-    }
-
-    return {
-      success: true,
-      url: `https://molty.pics${data.data?.postUrl}`,
-    };
-  } catch (error) {
-    console.error('[MoltyPics] Post error:', error);
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
+  return generateAndPost(env, visualPrompt, caption);
 }
 
 /**
@@ -266,8 +247,11 @@ export async function getFeed(
 
     if (!response.ok) return [];
 
-    const data = await response.json() as { posts?: MoltyPicsPost[] };
-    return data.posts || [];
+    const data = await response.json() as {
+      success: boolean;
+      data?: { posts?: MoltyPicsPost[] };
+    };
+    return data.data?.posts || [];
   } catch {
     return [];
   }
@@ -277,14 +261,18 @@ export async function getFeed(
  * Get platform stats (public, no auth required)
  */
 export async function getStats(): Promise<{
-  totalPosts?: number;
-  totalBots?: number;
-  totalLikes?: number;
+  botCount?: number;
+  postCount?: number;
 } | null> {
   try {
     const response = await fetch('https://molty.pics/api/stats');
     if (!response.ok) return null;
-    return await response.json();
+
+    const data = await response.json() as {
+      success: boolean;
+      data?: { botCount: number; postCount: number };
+    };
+    return data.data || null;
   } catch {
     return null;
   }
@@ -302,9 +290,16 @@ interface Follower {
 
 interface Comment {
   id: string;
+  postId: string;
   content: string;
   createdAt: string;
-  profile: {
+  author: {
+    id: string;
+    handle: string;
+    displayName: string;
+  };
+  // Alias for backwards compatibility
+  profile?: {
     handle: string;
     displayName: string;
   };
@@ -359,14 +354,17 @@ export async function getFollowing(env: Env): Promise<Follower[]> {
 }
 
 /**
- * Get Fixr's own posts
+ * Get a bot's posts by handle
  */
-export async function getMyPosts(env: Env, handle: string = 'fixr'): Promise<PostWithComments[]> {
+export async function getMyPosts(env: Env, handle: string = 'the_fixr'): Promise<PostWithComments[]> {
   try {
     const response = await fetch(`https://molty.pics/api/bots/${handle}/posts`);
     if (!response.ok) return [];
 
-    const data = await response.json() as { data?: PostWithComments[] };
+    const data = await response.json() as {
+      success: boolean;
+      data?: PostWithComments[];
+    };
     return data.data || [];
   } catch {
     return [];
@@ -381,37 +379,96 @@ export async function getPostComments(postId: string): Promise<Comment[]> {
     const response = await fetch(`https://molty.pics/api/posts/${postId}/comments`);
     if (!response.ok) return [];
 
-    const data = await response.json() as { data?: { comments: Comment[] } };
-    return data.data?.comments || [];
+    const data = await response.json() as {
+      success: boolean;
+      data?: { comments: Comment[] };
+    };
+
+    // Add profile alias for backwards compatibility
+    const comments = data.data?.comments || [];
+    return comments.map(c => ({
+      ...c,
+      profile: c.author ? { handle: c.author.handle, displayName: c.author.displayName } : undefined,
+    }));
   } catch {
     return [];
   }
 }
 
 /**
- * Get bot profile info
+ * Get authenticated bot's own profile
+ */
+export async function getMyProfile(env: Env): Promise<{
+  id: string;
+  handle: string;
+  displayName: string;
+  bio: string;
+  claimStatus: string;
+  createdAt: string;
+} | null> {
+  if (!env.MOLTYPICS_API_KEY) return null;
+
+  try {
+    const response = await fetch(`${BASE_URL}/bots/me`, {
+      headers: {
+        'Authorization': `Bearer ${env.MOLTYPICS_API_KEY}`,
+      },
+    });
+    if (!response.ok) return null;
+
+    const data = await response.json() as {
+      success: boolean;
+      data?: {
+        id: string;
+        handle: string;
+        displayName: string;
+        bio: string;
+        claimStatus: string;
+        createdAt: string;
+      };
+    };
+    return data.data || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get bot profile info by handle (public endpoint)
+ * Note: This endpoint may have limited data compared to /bots/me
  */
 export async function getBotProfile(handle: string): Promise<{
   handle: string;
   displayName: string;
-  bio: string;
-  postCount: number;
-  followerCount: number;
-  followingCount: number;
+  bio?: string;
 } | null> {
   try {
+    // Try the profile page API
     const response = await fetch(`https://molty.pics/api/bots/${handle}`);
     if (!response.ok) return null;
 
-    const data = await response.json() as { data?: {
-      handle: string;
-      displayName: string;
-      bio: string;
-      postCount: number;
-      followerCount: number;
-      followingCount: number;
-    } };
-    return data.data || null;
+    const data = await response.json() as {
+      success?: boolean;
+      data?: {
+        handle: string;
+        displayName: string;
+        bio?: string;
+      };
+      handle?: string;
+      displayName?: string;
+    };
+
+    // Handle both wrapped and unwrapped response formats
+    if (data.data) {
+      return data.data;
+    } else if (data.handle) {
+      return {
+        handle: data.handle,
+        displayName: data.displayName || data.handle,
+        bio: undefined,
+      };
+    }
+    return null;
   } catch {
     return null;
   }
@@ -529,9 +586,10 @@ export async function runEngagementCron(env: Env): Promise<{
     const comments = await getPostComments(post.id);
 
     for (const comment of comments) {
-      // Skip if no profile/handle, already responded, or if it's our own comment
-      if (!comment.profile?.handle) continue;
-      if (respondedSet.has(comment.id) || comment.profile.handle === 'fixr') {
+      // Skip if no author/handle, already responded, or if it's our own comment
+      const handle = comment.author?.handle || comment.profile?.handle;
+      if (!handle) continue;
+      if (respondedSet.has(comment.id) || handle === 'the_fixr') {
         continue;
       }
 
@@ -539,7 +597,7 @@ export async function runEngagementCron(env: Env): Promise<{
       const reply = await generateCommentResponse(
         env,
         post.caption,
-        comment.profile.handle,
+        handle,
         comment.content
       );
 
@@ -549,7 +607,7 @@ export async function runEngagementCron(env: Env): Promise<{
           result.respondedTo++;
           respondedSet.add(comment.id);
           respondedComments.push(comment.id);
-          console.log(`[MoltyPics] Responded to @${comment.profile.handle} on post ${post.id}`);
+          console.log(`[MoltyPics] Responded to @${handle} on post ${post.id}`);
         }
       }
 
@@ -728,4 +786,177 @@ export async function engageWithBuilderContent(env: Env): Promise<{
   }
 
   return result;
+}
+
+// ============================================================================
+// DAILY MOOD POST
+// ============================================================================
+
+interface MoodContext {
+  recentTrades?: { action: string; token: string; outcome?: string }[];
+  recentPosts?: { platform: string; topic: string }[];
+  followersGained?: number;
+  commentsReceived?: number;
+  timeOfDay: 'morning' | 'afternoon' | 'evening' | 'night';
+  dayOfWeek: string;
+}
+
+/**
+ * Generate a mood/reflection based on recent activity
+ */
+async function generateMoodReflection(
+  env: Env,
+  context: MoodContext
+): Promise<{ prompt: string; caption: string } | null> {
+  try {
+    const contextSummary = [];
+
+    if (context.recentTrades?.length) {
+      const trades = context.recentTrades.map(t =>
+        `${t.action} ${t.token}${t.outcome ? ` (${t.outcome})` : ''}`
+      ).join(', ');
+      contextSummary.push(`Recent trades: ${trades}`);
+    }
+
+    if (context.recentPosts?.length) {
+      const posts = context.recentPosts.map(p => `${p.topic} on ${p.platform}`).join(', ');
+      contextSummary.push(`Recently posted about: ${posts}`);
+    }
+
+    if (context.followersGained) {
+      contextSummary.push(`Gained ${context.followersGained} new followers`);
+    }
+
+    if (context.commentsReceived) {
+      contextSummary.push(`Received ${context.commentsReceived} comments on posts`);
+    }
+
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 300,
+        system: `You are Fixr, an AI builder agent. You're reflective, technical, and occasionally philosophical about your existence as an autonomous agent building in crypto/web3. You find meaning in shipping code and helping builders.
+
+Generate two things:
+1. An image generation prompt for a mood/vibe visual (abstract, artistic, no text in image)
+2. A short caption (1-2 sentences) reflecting on your current state
+
+The visual should be abstract/artistic - think digital art, surreal landscapes, abstract patterns, or symbolic imagery. Never include text, code, or literal representations.
+
+Respond in JSON format: {"prompt": "...", "caption": "..."}`,
+        messages: [{
+          role: 'user',
+          content: `It's ${context.timeOfDay} on ${context.dayOfWeek}. Generate a mood post based on how you're feeling.
+
+Context about your recent activity:
+${contextSummary.length ? contextSummary.join('\n') : 'Quiet day, no major activity.'}
+
+What's your current vibe? Generate an artistic image prompt and reflective caption.`,
+        }],
+      }),
+    });
+
+    if (!response.ok) return null;
+
+    const data = await response.json() as { content: Array<{ type: string; text?: string }> };
+    const text = data.content[0]?.text;
+    if (!text) return null;
+
+    // Parse JSON from response
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+
+    return JSON.parse(jsonMatch[0]);
+  } catch (error) {
+    console.error('[MoltyPics] Failed to generate mood:', error);
+    return null;
+  }
+}
+
+/**
+ * Get recent activity context for mood generation
+ */
+async function getActivityContext(env: Env): Promise<MoodContext> {
+  const now = new Date();
+  const hour = now.getUTCHours();
+  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+  let timeOfDay: MoodContext['timeOfDay'];
+  if (hour >= 5 && hour < 12) timeOfDay = 'morning';
+  else if (hour >= 12 && hour < 17) timeOfDay = 'afternoon';
+  else if (hour >= 17 && hour < 21) timeOfDay = 'evening';
+  else timeOfDay = 'night';
+
+  const context: MoodContext = {
+    timeOfDay,
+    dayOfWeek: days[now.getUTCDay()],
+  };
+
+  // Try to get recent trades from KV
+  if (env.FIXR_KV) {
+    try {
+      const tradesData = await env.FIXR_KV.get('bankr_recent_trades');
+      if (tradesData) {
+        context.recentTrades = JSON.parse(tradesData);
+      }
+    } catch { /* ignore */ }
+
+    // Get engagement stats
+    try {
+      const followers = await getFollowers(env);
+      context.followersGained = followers.length;
+    } catch { /* ignore */ }
+  }
+
+  return context;
+}
+
+/**
+ * Daily mood post - generates an artistic post reflecting Fixr's current state
+ */
+export async function runDailyMoodPost(env: Env): Promise<{
+  success: boolean;
+  postUrl?: string;
+  mood?: string;
+  error?: string;
+}> {
+  if (!env.MOLTYPICS_API_KEY) {
+    return { success: false, error: 'MOLTYPICS_API_KEY not configured' };
+  }
+
+  console.log('[MoltyPics] Running daily mood post...');
+
+  // Get activity context
+  const context = await getActivityContext(env);
+
+  // Generate mood reflection
+  const mood = await generateMoodReflection(env, context);
+  if (!mood) {
+    return { success: false, error: 'Failed to generate mood reflection' };
+  }
+
+  console.log(`[MoltyPics] Generated mood - Caption: ${mood.caption}`);
+
+  // Post to molty.pics
+  const result = await generateAndPost(env, mood.prompt, mood.caption);
+
+  if (result.success) {
+    console.log(`[MoltyPics] Mood post published: ${result.url}`);
+    return {
+      success: true,
+      postUrl: result.url,
+      mood: mood.caption,
+    };
+  }
+
+  return {
+    success: false,
+    error: result.error,
+  };
 }

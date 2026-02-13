@@ -4,7 +4,7 @@
 
 ## Overview
 
-FIXR provides tiered API access based on FIXR token staking. Non-stakers can use x402 micropayments for pay-per-call access.
+FIXR provides tiered API access based on FIXR token staking. Non-stakers can use x402 micropayments for pay-per-call access on **Base** or **Solana**.
 
 ## Access Tiers
 
@@ -48,42 +48,42 @@ curl -H "Authorization: Bearer 0xWallet:0xSignature" \
 
 ### 3. x402 Pay-Per-Call
 
-Pay $0.01 USDC per API call. No staking required.
+Pay $0.01 USDC per API call on **Base** or **Solana**. No staking required.
 
 ## x402 Payment Flow
 
 ```
-┌─────────┐         ┌──────────┐         ┌────────────┐
-│ Client  │         │  Server  │         │    Base    │
-└────┬────┘         └────┬─────┘         └─────┬──────┘
-     │                   │                     │
-     │ 1. Request API    │                     │
-     │──────────────────>│                     │
-     │                   │                     │
-     │ 2. 402 Payment    │                     │
-     │<──────────────────│                     │
-     │    Required       │                     │
-     │                   │                     │
-     │ 3. Send $0.01 USDC to treasury         │
-     │────────────────────────────────────────>│
-     │                   │                     │
-     │ 4. Retry with     │                     │
-     │    X-Payment-TxHash                     │
-     │──────────────────>│                     │
-     │                   │ 5. Verify tx        │
-     │                   │────────────────────>│
-     │                   │                     │
-     │ 6. Response       │                     │
-     │<──────────────────│                     │
-     │                   │                     │
+┌─────────┐         ┌──────────┐       ┌──────────────────┐
+│ Client  │         │  Server  │       │  Base or Solana  │
+└────┬────┘         └────┬─────┘       └────────┬─────────┘
+     │                   │                      │
+     │ 1. Request API    │                      │
+     │──────────────────>│                      │
+     │                   │                      │
+     │ 2. 402 Payment    │                      │
+     │<──────────────────│                      │
+     │    Required       │                      │
+     │                   │                      │
+     │ 3. Send $0.01 USDC to treasury          │
+     │─────────────────────────────────────────>│
+     │                   │                      │
+     │ 4. Retry with     │                      │
+     │    X-Payment-TxHash + X-Payment-Chain    │
+     │──────────────────>│                      │
+     │                   │ 5. Verify tx         │
+     │                   │─────────────────────>│
+     │                   │                      │
+     │ 6. Response       │                      │
+     │<──────────────────│                      │
+     │                   │                      │
 ```
 
-### Step-by-Step
+### Step-by-Step (Base)
 
 **1. Make a request (will receive 402 if rate limited)**
 
 ```bash
-curl -i https://fixr-agent.see21289.workers.dev/api/token/analyze \
+curl -i https://agent.fixr.nexus/api/v1/token/analyze \
   -H "Content-Type: application/json" \
   -d '{"address": "0x..."}'
 ```
@@ -92,17 +92,22 @@ curl -i https://fixr-agent.see21289.workers.dev/api/token/analyze \
 
 ```json
 {
-  "error": "payment_required",
-  "message": "Payment of $0.01 USDC required",
-  "payment": {
-    "tokenAddress": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-    "recipient": "0xBe2Cc1861341F3b058A3307385BEBa84167b3fa4",
-    "amount": "0.01",
-    "amountRaw": "10000",
-    "currency": "USDC",
-    "decimals": 6,
-    "network": "base",
-    "chainId": 8453
+  "error": "Invalid payment",
+  "x402": {
+    "pricePerCall": "$0.01 USDC",
+    "amount": 10000,
+    "chains": {
+      "base": {
+        "token": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+        "recipient": "0xBe2Cc1861341F3b058A3307385BEBa84167b3fa4",
+        "chainId": 8453
+      },
+      "solana": {
+        "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "recipient": "96vRDBvjR2FhtzH5WtawLWdLh1dFmZjnY4DEsmjaEvuU",
+        "network": "mainnet-beta"
+      }
+    }
   }
 }
 ```
@@ -127,13 +132,43 @@ await tx.wait();
 **4. Retry request with transaction hash:**
 
 ```bash
-curl https://fixr-agent.see21289.workers.dev/api/token/analyze \
+curl https://agent.fixr.nexus/api/v1/token/analyze \
   -H "Content-Type: application/json" \
   -H "X-Payment-TxHash: 0xYourTransactionHash" \
   -d '{"address": "0x..."}'
 ```
 
-**Important:** Each transaction hash can only be used once. This prevents replay attacks.
+### Step-by-Step (Solana)
+
+**1. Send 0.01 USDC on Solana to the treasury:**
+
+```javascript
+// Using @solana/web3.js + @solana/spl-token
+import { getAssociatedTokenAddress, createTransferInstruction } from '@solana/spl-token';
+
+const USDC_MINT = new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
+const TREASURY = new PublicKey('96vRDBvjR2FhtzH5WtawLWdLh1dFmZjnY4DEsmjaEvuU');
+
+const fromAta = await getAssociatedTokenAddress(USDC_MINT, wallet.publicKey);
+const toAta = await getAssociatedTokenAddress(USDC_MINT, TREASURY);
+
+const tx = new Transaction().add(
+  createTransferInstruction(fromAta, toAta, wallet.publicKey, 10000) // 0.01 USDC
+);
+const sig = await sendAndConfirmTransaction(connection, tx, [wallet]);
+```
+
+**2. Use the signature to authenticate your API call:**
+
+```bash
+curl https://agent.fixr.nexus/api/v1/token/analyze \
+  -H "Content-Type: application/json" \
+  -H "X-Payment-Chain: solana" \
+  -H "X-Payment-TxHash: YourSolanaTransactionSignature" \
+  -d '{"address": "0x..."}'
+```
+
+**Important:** Each transaction hash/signature can only be used once. This prevents replay attacks.
 
 ## API Endpoints
 
@@ -168,26 +203,41 @@ Response:
 {
   "success": true,
   "x402": {
-    "pricePerCall": "$0.01",
-    "token": {
-      "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-      "symbol": "USDC",
-      "decimals": 6
+    "version": 2,
+    "pricePerCall": "$0.01 USDC",
+    "priceInUnits": 10000,
+    "chains": {
+      "base": {
+        "token": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+        "symbol": "USDC",
+        "decimals": 6,
+        "chainId": 8453,
+        "recipient": "0xBe2Cc1861341F3b058A3307385BEBa84167b3fa4"
+      },
+      "solana": {
+        "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "symbol": "USDC",
+        "decimals": 6,
+        "network": "mainnet-beta",
+        "recipient": "96vRDBvjR2FhtzH5WtawLWdLh1dFmZjnY4DEsmjaEvuU"
+      }
     },
-    "recipient": "0xBe2Cc1861341F3b058A3307385BEBa84167b3fa4",
-    "paymentUri": "ethereum:0x833589...@8453/transfer?address=0xBe2Cc...&uint256=10000"
+    "headers": {
+      "payment": "X-Payment-TxHash",
+      "chain": "X-Payment-Chain (base | solana, default: base)",
+      "wallet": "X-Wallet-Address"
+    }
   }
 }
 ```
 
-### Verify Payment (Testing)
+## Request Headers
 
-```bash
-POST /api/access/payment
-Content-Type: application/json
-
-{ "txHash": "0x..." }
-```
+| Header | Required | Description |
+|--------|----------|-------------|
+| `X-Payment-TxHash` | For x402 | Transaction hash (Base) or signature (Solana) |
+| `X-Payment-Chain` | For Solana x402 | `base` (default) or `solana` |
+| `X-Wallet-Address` | For tier access | Your EVM wallet address for staking tier lookup |
 
 ## Response Headers
 
@@ -200,14 +250,14 @@ All API responses include:
 | `X-Wallet-Verified` | Whether wallet address was verified |
 | `X-Payment-Verified` | Whether x402 payment was verified |
 
-## SDK Example (JavaScript)
+## SDK Example (Base — JavaScript)
 
 ```javascript
 class FixrClient {
   constructor(walletAddress, signer) {
     this.wallet = walletAddress;
     this.signer = signer;
-    this.baseUrl = 'https://fixr-agent.see21289.workers.dev';
+    this.baseUrl = 'https://agent.fixr.nexus';
   }
 
   async request(endpoint, options = {}) {
@@ -224,49 +274,74 @@ class FixrClient {
 
     // Handle x402 payment required
     if (response.status === 402) {
-      const data = await response.json();
-      const txHash = await this.pay(data.payment);
+      const txHash = await this.payBase();
 
       // Retry with payment proof
       return fetch(`${this.baseUrl}${endpoint}`, {
         ...options,
-        headers: {
-          ...headers,
-          'X-Payment-TxHash': txHash
-        }
+        headers: { ...headers, 'X-Payment-TxHash': txHash }
       });
     }
 
     return response;
   }
 
-  async pay(payment) {
+  async payBase() {
     const usdc = new ethers.Contract(
-      payment.tokenAddress,
+      '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
       ['function transfer(address,uint256) returns (bool)'],
       this.signer
     );
-
     const tx = await usdc.transfer(
-      payment.recipient,
-      BigInt(payment.amountRaw)
+      '0xBe2Cc1861341F3b058A3307385BEBa84167b3fa4',
+      10000n
     );
     await tx.wait();
     return tx.hash;
   }
 
   async analyzeToken(address) {
-    const res = await this.request('/api/token/analyze', {
+    const res = await this.request('/api/v1/token/analyze', {
       method: 'POST',
       body: JSON.stringify({ address })
     });
     return res.json();
   }
 }
+```
 
-// Usage
-const client = new FixrClient(walletAddress, signer);
-const analysis = await client.analyzeToken('0xTokenAddress');
+## SDK Example (Solana — JavaScript)
+
+```javascript
+import { Connection, PublicKey, Transaction } from '@solana/web3.js';
+import { getAssociatedTokenAddress, createTransferInstruction } from '@solana/spl-token';
+
+const USDC_MINT = new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
+const TREASURY = new PublicKey('96vRDBvjR2FhtzH5WtawLWdLh1dFmZjnY4DEsmjaEvuU');
+
+async function payAndCall(connection, wallet, endpoint, body) {
+  // 1. Send 0.01 USDC
+  const fromAta = await getAssociatedTokenAddress(USDC_MINT, wallet.publicKey);
+  const toAta = await getAssociatedTokenAddress(USDC_MINT, TREASURY);
+
+  const tx = new Transaction().add(
+    createTransferInstruction(fromAta, toAta, wallet.publicKey, 10000)
+  );
+  const sig = await connection.sendTransaction(tx, [wallet]);
+  await connection.confirmTransaction(sig, 'confirmed');
+
+  // 2. Call API with signature
+  const res = await fetch(`https://agent.fixr.nexus${endpoint}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Payment-Chain': 'solana',
+      'X-Payment-TxHash': sig,
+    },
+    body: JSON.stringify(body),
+  });
+  return res.json();
+}
 ```
 
 ## Staking for Access
@@ -303,7 +378,8 @@ await staking.stake(amount, 1); // 30-day lock
 
 | Method | Cost per 1000 calls |
 |--------|---------------------|
-| x402 Pay-per-call | $10.00 |
+| x402 Pay-per-call (Base USDC) | $10.00 |
+| x402 Pay-per-call (Solana USDC) | $10.00 |
 | BUILDER tier (1M FIXR staked) | Free (within limits) |
 | PRO tier (10M FIXR staked) | Free (within limits) |
 | ELITE tier (50M FIXR staked) | Free (unlimited) |
@@ -311,18 +387,26 @@ await staking.stake(amount, 1); // 30-day lock
 ## Troubleshooting
 
 ### "Transaction already used"
-Each tx hash works once. Send a new USDC payment for each API call.
+Each tx hash/signature works once. Send a new USDC payment for each API call.
 
-### "No USDC payment to treasury found"
+### "No USDC payment to treasury found" (Base)
 Ensure you sent USDC (not ETH) to the correct treasury address on Base mainnet.
 
+### "Transaction not found" (Solana)
+Ensure you're using the correct transaction signature and that the transaction has been confirmed.
+
 ### "Insufficient payment"
-Send at least $0.01 USDC (10000 raw units with 6 decimals).
+Send at least $0.01 USDC (10000 raw units with 6 decimals) on either chain.
 
 ### "Rate limit exceeded" (even with staking)
 Your tier rate limit is per-minute. Wait for the reset or use x402 to bypass.
 
+### Solana payment not recognized
+Make sure you include `X-Payment-Chain: solana` header. Without it, the server assumes Base and will fail to verify.
+
 ## Contract Addresses
+
+### Base (EVM)
 
 | Contract | Address |
 |----------|---------|
@@ -332,6 +416,13 @@ Your tier rate limit is per-minute. Wait for the reset or use x402 to bypass.
 | USDC (Base) | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` |
 | WETH (Base) | `0x4200000000000000000000000000000000000006` |
 | FIXR Token | TBD (Clanker launch) |
+
+### Solana
+
+| Account | Address |
+|---------|---------|
+| Treasury | `96vRDBvjR2FhtzH5WtawLWdLh1dFmZjnY4DEsmjaEvuU` |
+| USDC Mint | `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v` |
 
 ---
 

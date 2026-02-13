@@ -88,8 +88,19 @@ function getWalletClient(env: Env) {
     throw new Error('WALLET_PRIVATE_KEY not configured');
   }
 
+  // Clean and ensure private key has 0x prefix
+  let cleanKey = env.WALLET_PRIVATE_KEY.trim();
+  if (!cleanKey.startsWith('0x')) {
+    cleanKey = `0x${cleanKey}`;
+  }
+
+  // Validate key length (should be 66 chars with 0x prefix for 32 bytes)
+  if (cleanKey.length !== 66) {
+    throw new Error(`Invalid private key length: ${cleanKey.length} (expected 66)`);
+  }
+
   const rpcUrl = env.BASE_RPC_URL || 'https://mainnet.base.org';
-  const account = privateKeyToAccount(env.WALLET_PRIVATE_KEY as `0x${string}`);
+  const account = privateKeyToAccount(cleanKey as `0x${string}`);
 
   return {
     client: createWalletClient({
@@ -360,6 +371,49 @@ export async function transferUSDCViaNeynar(
     return { success: true };
   } catch (error) {
     console.error('Neynar transfer error:', error);
+    return { success: false, error: String(error) };
+  }
+}
+
+/**
+ * Transfer any ERC20 token to another address
+ */
+export async function transferERC20(
+  env: Env,
+  tokenAddress: string,
+  to: string,
+  amount: string,
+  decimals: number = 18
+): Promise<{ success: boolean; txHash?: string; error?: string }> {
+  try {
+    const publicClient = getPublicClient(env);
+    const { client } = getWalletClient(env);
+
+    // Convert amount to token units
+    const amountRaw = BigInt(Math.floor(parseFloat(amount) * (10 ** decimals)));
+
+    console.log(`Transferring ${amount} tokens (${tokenAddress}) to ${to}...`);
+
+    const hash = await client.writeContract({
+      address: tokenAddress as `0x${string}`,
+      abi: ERC20_ABI,
+      functionName: 'transfer',
+      args: [to as `0x${string}`, amountRaw],
+    });
+
+    console.log('Transfer tx submitted:', hash);
+
+    // Wait for confirmation
+    const receipt = await publicClient.waitForTransactionReceipt({ hash });
+
+    if (receipt.status === 'success') {
+      console.log('Token transfer confirmed!');
+      return { success: true, txHash: hash };
+    } else {
+      return { success: false, error: 'Transfer transaction failed' };
+    }
+  } catch (error) {
+    console.error('Token transfer error:', error);
     return { success: false, error: String(error) };
   }
 }

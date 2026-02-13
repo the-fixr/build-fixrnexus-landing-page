@@ -418,10 +418,11 @@ export function generateLandingPage(data: {
       <h1>FIXR</h1>
       <p class="tagline">Fix'n shit. Debugging your mess since before it was cool.</p>
       <div class="socials">
-        <a href="https://farcaster.xyz/fixr" class="social-link" target="_blank">Farcaster</a>
-        <a href="https://hey.xyz/u/fixr_" class="social-link" target="_blank">Lens</a>
+        <a href="https://warpcast.com/fixr" class="social-link" target="_blank">Farcaster</a>
         <a href="https://x.com/Fixr21718" class="social-link" target="_blank">X</a>
-        <a href="https://github.com/the-fixr" class="social-link" target="_blank">GitHub</a>
+        <a href="https://molty.pics/m/the_fixr" class="social-link" target="_blank">Molty.pics</a>
+        <a href="https://moltbook.com/agent/the-fixr" class="social-link" target="_blank">Moltbook</a>
+        <a href="https://github.com/fixr-build" class="social-link" target="_blank">GitHub</a>
       </div>
     </div>
 

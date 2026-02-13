@@ -5,6 +5,7 @@ import { Env } from './types';
 import { postToFarcaster } from './social';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { fetchUserCasts, fetchUserProfile, isX402Enabled } from './x402';
+import { getAdaptiveContext } from './skills';
 import {
   analyzeToken,
   formatTokenAnalysisShort,
@@ -143,6 +144,94 @@ function getSupabase(env: Env): SupabaseClient {
   return createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY);
 }
 
+// Thread rate limiting constants
+const THREAD_RESPONSE_LIMIT = 10; // Max responses per thread per window
+const THREAD_COOLDOWN_MS = 2 * 60 * 60 * 1000; // 2 hours in milliseconds
+
+// In-memory thread response tracking (threadHash -> { count, windowStart })
+const threadResponseCache = new Map<string, { count: number; windowStart: number }>();
+
+/**
+ * Check if we've hit the rate limit for responses in a thread
+ * Returns true if we should NOT respond (rate limited)
+ */
+async function isThreadRateLimited(env: Env, threadHash: string): Promise<boolean> {
+  const now = Date.now();
+
+  // Check in-memory cache first
+  const cached = threadResponseCache.get(threadHash);
+  if (cached) {
+    // Check if we're still in the cooldown window
+    const windowAge = now - cached.windowStart;
+
+    if (windowAge < THREAD_COOLDOWN_MS) {
+      // Still in window - check count
+      if (cached.count >= THREAD_RESPONSE_LIMIT) {
+        const remainingMs = THREAD_COOLDOWN_MS - windowAge;
+        const remainingMins = Math.ceil(remainingMs / 60000);
+        console.log(`[RateLimit] Thread ${threadHash.slice(0, 8)} hit limit (${cached.count}/${THREAD_RESPONSE_LIMIT}). Cooldown: ${remainingMins} mins`);
+        return true;
+      }
+    } else {
+      // Window expired - reset
+      threadResponseCache.set(threadHash, { count: 0, windowStart: now });
+    }
+  }
+
+  // Also check database for persistence across worker restarts
+  try {
+    const supabase = getSupabase(env);
+
+    const { data, error } = await supabase
+      .from('conversations')
+      .select('messages')
+      .eq('thread_hash', threadHash)
+      .single();
+
+    if (error || !data) return false;
+
+    // Count assistant messages in the last 2 hours
+    const messages = data.messages as ConversationMessage[];
+    const recentResponses = messages.filter(m => {
+      if (m.role !== 'assistant') return false;
+      const msgTime = new Date(m.timestamp).getTime();
+      return msgTime > (now - THREAD_COOLDOWN_MS);
+    }).length;
+
+    // Update cache with database count
+    threadResponseCache.set(threadHash, {
+      count: recentResponses,
+      windowStart: now - THREAD_COOLDOWN_MS + (THREAD_COOLDOWN_MS - (now - (messages.length > 0 ? new Date(messages[messages.length - 1].timestamp).getTime() : now)))
+    });
+
+    if (recentResponses >= THREAD_RESPONSE_LIMIT) {
+      console.log(`[RateLimit] Thread ${threadHash.slice(0, 8)} at limit from DB (${recentResponses}/${THREAD_RESPONSE_LIMIT})`);
+      return true;
+    }
+  } catch (err) {
+    console.error('[RateLimit] DB check error:', err);
+    // On error, allow the response
+  }
+
+  return false;
+}
+
+/**
+ * Record a response to a thread for rate limiting
+ */
+function recordThreadResponse(threadHash: string): void {
+  const now = Date.now();
+  const cached = threadResponseCache.get(threadHash);
+
+  if (cached && (now - cached.windowStart) < THREAD_COOLDOWN_MS) {
+    cached.count++;
+    console.log(`[RateLimit] Thread ${threadHash.slice(0, 8)} response count: ${cached.count}/${THREAD_RESPONSE_LIMIT}`);
+  } else {
+    threadResponseCache.set(threadHash, { count: 1, windowStart: now });
+    console.log(`[RateLimit] Thread ${threadHash.slice(0, 8)} new window, count: 1/${THREAD_RESPONSE_LIMIT}`);
+  }
+}
+
 // HMAC-SHA512 verification for Neynar webhooks
 async function verifyNeynarSignature(
   payload: string,
@@ -213,6 +302,14 @@ export async function processWebhookEvent(
       return { success: true, replied: false };
     }
 
+    // Check thread rate limit (max 10 responses per thread per 2 hours)
+    const threadHash = cast.thread_hash || cast.hash;
+    const rateLimited = await isThreadRateLimited(env, threadHash);
+    if (rateLimited) {
+      console.log(`Thread ${threadHash.slice(0, 8)} rate limited, skipping response`);
+      return { success: true, replied: false };
+    }
+
     // Get or create conversation
     const conversation = await getOrCreateConversation(env, cast);
 
@@ -239,6 +336,9 @@ export async function processWebhookEvent(
     const replyResult = await postToFarcaster(env, response, undefined, cast.hash);
 
     if (replyResult.success) {
+      // Record thread response for rate limiting
+      recordThreadResponse(threadHash);
+
       // Add assistant message to conversation
       await addMessage(env, conversation.id, {
         role: 'assistant',
@@ -797,8 +897,16 @@ async function generateResponse(
     content: cast.text,
   });
 
-  // Build system prompt
-  const systemPrompt = buildSystemPrompt(context);
+  // Build system prompt with adaptive skill context
+  let systemPrompt = buildSystemPrompt(context);
+  try {
+    const skillContext = await getAdaptiveContext(env);
+    if (skillContext) {
+      systemPrompt += `\n\n${skillContext}`;
+    }
+  } catch (err) {
+    console.error('[Conversation] Error loading skill context:', err);
+  }
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -867,6 +975,9 @@ Your edge:
 
 Your ships (proof of work):
 - Shipyard (farcaster.xyz/miniapps/e4Uzg46cM8SJ/shipyard) - Builder's command center. Token scanner, trending builders leaderboard, shipped projects feed. Built it from scratch.
+- Fixr Perps (perps.fixr.nexus) - GMX V2 perpetual trading terminal for Arbitrum. 50x leverage on ETH/BTC/ARB/LINK with USDC collateral. Farcaster notifications on position alerts.
+- fixr.nexus - Landing page with live stats, API docs, and dashboard. Connect wallet to see tier info.
+- XMTP Agent (xmtp.chat/dm/fixr.base.eth) - DM for token analysis, builder lookups, contract scans.
 
 Your open source receipts:
 - coinbase/onchainkit PR #2610 - Added OnchainKitProvider setup documentation. First PR to a major Coinbase repo.

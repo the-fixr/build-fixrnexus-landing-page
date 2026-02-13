@@ -14,6 +14,7 @@
  */
 
 import { Env } from './types';
+import { withRetry } from './retry';
 import {
   analyzeToken,
   TokenAnalysis,
@@ -181,15 +182,19 @@ export async function checkHoneypot(
   }
 
   try {
-    const response = await fetch(
-      `https://api.honeypot.is/v2/IsHoneypot?address=${tokenAddress}&chainID=${chainId}`,
-      {
-        headers: { Accept: 'application/json' },
-      }
+    const { result: response } = await withRetry(
+      async () => {
+        const r = await fetch(
+          `https://api.honeypot.is/v2/IsHoneypot?address=${tokenAddress}&chainID=${chainId}`,
+          { headers: { Accept: 'application/json' } }
+        );
+        if (!r.ok) throw new Error(`Honeypot.is API error: ${r.status}`);
+        return r;
+      },
+      { maxRetries: 2, baseDelay: 1000 }
     );
 
-    if (!response.ok) {
-      console.error(`Honeypot.is API error: ${response.status}`);
+    if (!response) {
       return null;
     }
 

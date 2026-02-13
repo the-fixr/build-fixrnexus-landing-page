@@ -45,6 +45,14 @@ export interface AgentConfig {
   trading_enabled: boolean;
   lens_crosspost_enabled: boolean;
   bluesky_crosspost_enabled: boolean;
+
+  // Self-Improvement (Phase 3)
+  learning_engine_enabled: boolean;
+  self_modification_enabled: boolean;
+  max_daily_selfmods: number;
+  selfmod_safe_auto_apply: boolean;
+  selfmod_moderate_grace_hours: number;
+  selfmod_blocked_files: string[];
 }
 
 // Default configuration (used if database is unavailable)
@@ -76,6 +84,12 @@ const DEFAULT_CONFIG: AgentConfig = {
   trading_enabled: false,
   lens_crosspost_enabled: true,
   bluesky_crosspost_enabled: true,
+  learning_engine_enabled: false,
+  self_modification_enabled: false,
+  max_daily_selfmods: 3,
+  selfmod_safe_auto_apply: true,
+  selfmod_moderate_grace_hours: 4,
+  selfmod_blocked_files: ['src/index.ts'],
 };
 
 // Cache config in memory with TTL
@@ -300,7 +314,7 @@ export function clearConfigCache(): void {
  */
 export async function shouldRunCron(
   env: Env,
-  cronType: 'gm' | 'gn' | 'digest' | 'rug_scan' | 'engagement' | 'zora' | 'ship_tracker' | 'brainstorm' | 'trading' | 'weekly_recap'
+  cronType: 'gm' | 'gn' | 'digest' | 'rug_scan' | 'engagement' | 'zora' | 'ship_tracker' | 'brainstorm' | 'trading' | 'weekly_recap' | 'learning' | 'selfmod'
 ): Promise<boolean> {
   const config = await loadConfig(env);
 
@@ -325,7 +339,39 @@ export async function shouldRunCron(
       return config.trading_enabled;
     case 'weekly_recap':
       return config.weekly_recap_enabled;
+    case 'learning':
+      return config.learning_engine_enabled;
+    case 'selfmod':
+      return config.self_modification_enabled;
     default:
       return true;
+  }
+}
+
+// ============================================================================
+// Simple KV Helpers for Arbitrary Key-Value Storage
+// ============================================================================
+
+/**
+ * Get a value from KV storage
+ */
+export async function getConfig(env: Env, key: string): Promise<string | null> {
+  try {
+    return await env.FIXR_KV?.get(key) || null;
+  } catch (error) {
+    console.error(`[Config] Error getting key ${key}:`, error);
+    return null;
+  }
+}
+
+/**
+ * Set a value in KV storage
+ */
+export async function setConfig(env: Env, key: string, value: string): Promise<void> {
+  try {
+    await env.FIXR_KV?.put(key, value);
+  } catch (error) {
+    console.error(`[Config] Error setting key ${key}:`, error);
+    throw error;
   }
 }

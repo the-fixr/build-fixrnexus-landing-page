@@ -15,22 +15,40 @@ Autonomous AI agent that audits smart contracts, tracks builders, and ships prod
 | Repo | Platform | URL | Deploy Command |
 |------|----------|-----|----------------|
 | `fixr-agent` (this repo) | Cloudflare Workers | https://agent.fixr.nexus | `cd workers && npx wrangler deploy` |
+| [fixr-perps](https://github.com/the-fixr/fixr-perps) | Vercel | https://perps.fixr.nexus | Push to `main` (auto-deploy) |
 | [shipyard](https://github.com/the-fixr/shipyard) | Vercel | https://shipyard.fixr.nexus | Push to `main` (auto-deploy) |
 | [build-fixrnexus-landing-page](https://github.com/the-fixr/build-fixrnexus-landing-page) | Vercel | https://fixr.nexus | Push to `main` (auto-deploy) |
+| [fixr-admin](https://github.com/the-fixr/fixr-admin) | Vercel | Admin dashboard | Push to `main` (auto-deploy) |
 
-**Note:** Use `POST /api/github/push` to push files via Fixr's GitHub credentials.
+**Pushing Code:**
+- Use `POST /api/github/push` to push files via Fixr's GitHub credentials
+- Use `POST /api/github/push-binary` for binary files (base64 encoded)
+- Always use proper JSON escaping for file content (use `jq -Rs '.'`)
 
 ## Architecture
 
 ```
 fixr-agent/
-├── workers/          # Cloudflare Worker (main API - 80+ endpoints)
+├── workers/          # Cloudflare Worker (main API - 120+ endpoints)
 ├── xmtp-agent/       # XMTP messaging agent (Railway)
 ├── fixr-mini-app/    # Shipyard Farcaster mini app (Vercel)
-├── gmxlite/          # GMX V2 trading mini app (Arbitrum)
+├── gmxlite/          # Fixr Perps - GMX V2 trading mini app (Vercel/Arbitrum)
+├── fixr-admin/       # Admin dashboard (Vercel)
 ├── contracts/        # Smart contracts (Base mainnet)
+├── .fixr-memory/     # Agent memory and identity
 └── scripts/          # Utility scripts
 ```
+
+## Agent Memory
+
+Fixr maintains persistent memory in `.fixr-memory/memory.json`:
+- **Identity** - Name, tagline, social links
+- **Goals** - Current objectives
+- **Completed Projects** - All shipped projects with dates
+- **Open Source Contributions** - PRs to major repos
+- **Wallets** - Ethereum and Solana addresses
+
+The conversation system prompt in `workers/src/lib/conversation.ts` uses this memory to maintain consistent personality.
 
 ## Smart Contracts (Base Mainnet)
 
@@ -143,15 +161,59 @@ Token staking with tiered access control.
 | Endpoint | Description |
 |----------|-------------|
 | `GET /api/access/tier?wallet=0x...` | Check staking tier for wallet |
+| `GET /api/access/payment` | Get x402 payment info and pricing |
 | `GET /api/access/stats` | Tier distribution statistics |
 | `GET /api/access/protected` | Test protected endpoint |
-| `POST /api/access/payment` | x402 micropayment validation |
 | `GET /api/hub/stats` | Staking contract statistics |
 
 **x402 Payment Protocol:**
-- Non-stakers can pay per-request via x402
+- Non-stakers can pay $0.01 USDC per request via x402
 - Automatic tier detection from on-chain staking
-- Rate limiting based on tier
+- Rate limiting based on tier (FREE: 10/min, BUILDER: 20/min, PRO: 50/min, ELITE: unlimited)
+
+### Public API v1 (with x402/Staking Access)
+
+All `/api/v1/*` endpoints require either FIXR staking or x402 payment. Pass `X-Wallet-Address` header for staking tier detection, or `X-Payment-TxHash` for pay-per-call.
+
+#### Security & Analysis
+
+| Endpoint | Description |
+|----------|-------------|
+| `POST /api/v1/security/audit` | Smart contract security audit |
+| `POST /api/v1/wallet/intel` | Wallet intelligence & risk analysis |
+| `GET /api/v1/rug/detect/:address` | Real-time rug detection |
+| `GET /api/v1/rug/recent` | Recent rug incidents |
+| `GET /api/v1/sentiment/:symbol` | Farcaster sentiment analysis |
+| `POST /api/v1/token/analyze` | Comprehensive token analysis |
+
+#### Reputation Scores
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/v1/reputation/ethos/:fid` | Ethos reputation score by FID |
+| `GET /api/v1/reputation/talent/:wallet` | Talent Protocol passport score |
+| `GET /api/v1/builder/:id` | Full builder profile |
+
+#### AI Generation
+
+| Endpoint | Description |
+|----------|-------------|
+| `POST /api/v1/generate/image` | AI image generation (Gemini) |
+| `POST /api/v1/generate/video` | AI video generation (WaveSpeed) |
+
+#### GitHub Analysis
+
+| Endpoint | Description |
+|----------|-------------|
+| `POST /api/v1/github/analyze` | Repository code analysis |
+
+#### Builder & Trending
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/v1/builders/top` | Top builders leaderboard |
+| `GET /api/v1/ships/recent` | Recent shipped projects |
+| `GET /api/v1/trending/topics` | Trending Farcaster topics |
 
 ### Project Showcase
 
@@ -202,13 +264,37 @@ Monitors tracked tokens for:
 | `POST /api/webhook/farcaster` | Neynar webhook handler |
 | `POST /api/webhook/miniapp` | Mini app install/uninstall events |
 
-### Bankr Integration
+### Bankr Integration & Trading
 
 | Endpoint | Description |
 |----------|-------------|
 | `POST /api/bankr/test-signal` | Test trading signal parsing |
+| `GET /api/bankr/balances` | Get wallet balances |
+| `POST /api/bankr/prompt` | Send prompt to Bankr |
+| `POST /api/bankr/buy` | Buy token |
+| `POST /api/bankr/sell` | Sell token |
+| `GET /api/bankr/price/:token` | Get token price |
+| `POST /api/bankr/bridge` | Bridge tokens cross-chain |
+| `GET /api/bankr/token-info/:token` | Get token info |
 
-Fixr monitors @bankr for trading signals and can parse buy/sell recommendations.
+### Daily Trading Discussion
+
+| Endpoint | Description |
+|----------|-------------|
+| `POST /api/trading/discuss` | Run trading discussion (2-question framework) |
+| `POST /api/trading/discuss-and-post` | Run discussion and post results |
+
+**Two-Question Framework:**
+1. "Are market conditions favorable for taking positions?" (macro analysis)
+2. "Based on current portfolio, what's the optimal action?" (SELL, HOLD, or BUY)
+
+**Decision Output:**
+- **Action:** SELL / HOLD / BUY
+- **Confidence:** 0-100%
+- **Reasoning:** AI-generated analysis
+- **Position sizing:** Scaled by confidence (10-50% of available)
+
+Requires `BANKR_API_KEY` environment variable. Runs daily at 15:00 UTC when `trading_enabled` is true.
 
 ### GitHub Integration
 
@@ -218,6 +304,7 @@ Fixr monitors @bankr for trading signals and can parse buy/sell recommendations.
 | `POST /api/github/deploy` | Create repo with files |
 | `POST /api/github/push` | Push files to branch |
 | `POST /api/github/push-binary` | Push binary file (base64) |
+| `DELETE /api/github/files` | Delete files from repo |
 | `POST /api/github/contribute` | Fork, branch, push, create PR |
 | `GET /api/github/prs` | Check tracked PR statuses |
 | `GET /api/github/pr/:owner/:repo/:number` | Get PR details |
@@ -360,6 +447,28 @@ Fixr is registered on Ethereum mainnet ERC-8004 agent registry with USDC payment
 | `POST /api/plan` | Generate plan for task |
 | `POST /api/trigger-cron` | Manual cron trigger (testing) |
 
+### Proposals & Brainstorming
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/proposals` | List generated proposals |
+| `POST /api/proposals/generate` | Generate new proposals (brainstorm) |
+| `PATCH /api/proposals/:id` | Update proposal status |
+| `POST /api/proposals/:id/convert` | Convert proposal to task |
+
+**Brainstorming:** Daily at 20:00 UTC, Fixr generates project proposals based on:
+- Current ecosystem trends
+- Builder activity patterns
+- Recent shipped projects
+- Open opportunities
+
+### Database Migrations
+
+| Endpoint | Description |
+|----------|-------------|
+| `POST /api/migrate/daily-posts` | Check/create daily_posts table |
+| `GET /api/migrate/daily-posts/status` | Check table status and recent posts |
+
 ### Configuration
 
 | Endpoint | Description |
@@ -394,9 +503,9 @@ Fixr is registered on Ethereum mainnet ERC-8004 agent registry with USDC payment
 | `POST /api/notifications/send-daily` | Send daily notification |
 | `POST /api/webhook/miniapp` | Neynar webhook handler |
 
-### GMX Trading (Arbitrum)
+### GMX Trading (Arbitrum) & Fixr Perps
 
-Fixr is a registered GMX UI fee receiver, earning 0.1% on all trades through GMXLite.
+Fixr is a registered GMX UI fee receiver, earning 0.1% on all trades through Fixr Perps.
 
 | Endpoint | Description |
 |----------|-------------|
@@ -407,11 +516,22 @@ Fixr is a registered GMX UI fee receiver, earning 0.1% on all trades through GMX
 **Fee Receiver:** `0xBe2Cc1861341F3b058A3307385BEBa84167b3fa4`
 **Registration Tx:** [0x4545af4...37cf740](https://arbiscan.io/tx/0x4545af4a3a3e3ab17ad7e0b6f89d3043058a4a620763329752b3ed54b37cf740)
 
-**GMXLite Mini App:** Farcaster mini app for GMX V2 perpetual trading on Arbitrum.
-- Markets: ETH-USD, BTC-USD, ARB-USD, LINK-USD
-- Collateral: USDC
-- Auto chain switching from Base to Arbitrum
-- GMX SDK integration with skip simulation
+**Fixr Perps Mini App:** https://perps.fixr.nexus
+
+Farcaster mini app for GMX V2 perpetual trading on Arbitrum.
+- **Markets:** ETH-USD, BTC-USD, ARB-USD, LINK-USD (up to 50x leverage)
+- **Collateral:** USDC
+- **Auto chain switching** from Base to Arbitrum
+- **GMX SDK integration** with position management
+- **Farcaster Notifications:** Position alerts at ±25%/50%/75% thresholds
+- **Frame SDK:** Uses Neynar managed webhook for notifications
+
+**Notifications:**
+- Welcome notification when user adds the mini app
+- Position profit alerts (+25%, +50%, +75%, etc.)
+- Position loss alerts (-25%, -50%, -75%, etc.)
+
+**Code Location:** `/gmxlite/`
 
 ### Wallet & Payments
 
@@ -440,21 +560,32 @@ Fixr is a registered GMX UI fee receiver, earning 0.1% on all trades through GMX
 
 ## Cron Jobs
 
-| Schedule | Task |
-|----------|------|
-| Every 5 min | Execute approved tasks |
-| Every 10 min | Generate plans for pending tasks |
-| Daily 14:00 UTC | Daily "Fix'n Report" post |
-| Daily 16:00 UTC | Builder digest (Farcaster + X) |
-| Daily 18:00 UTC | Engagement check |
-| Every 6 hours | Rug detection scan |
-| Every 12 hours | Refresh cast engagement |
-| Daily ~12:xx UTC | GM post (randomized timing) |
-| Daily ~04:xx UTC | GN post (randomized timing) |
-| Daily 09:00 UTC | Builder highlight notification |
-| Daily 15:00 UTC | Featured project notification |
-| Every 2 days 13:00 UTC | Zora Coin creation |
-| Sunday 17:00 UTC | Weekly recap video generation |
+All cron jobs check `daily_posts` table to prevent duplicates. Times in UTC.
+
+| Schedule | Task | Config Flag |
+|----------|------|-------------|
+| Every 5 min | Execute approved tasks | Always on |
+| Every 10 min | Generate plans for pending tasks | Always on |
+| Every 30 min | Check tracked PRs for comments | Always on |
+| Daily 06:00 UTC | Ship tracker ingestion + ecosystem insights | `ship_tracker_enabled` |
+| Daily ~12:xx UTC | GM post (randomized 5-min slot) | `auto_gm` |
+| Daily ~04:xx UTC | GN post (randomized 5-min slot) | `auto_gn` |
+| Daily 13:00 UTC (every 2 days) | Zora Coin creation | `zora_coin_enabled` |
+| Daily 14:00 UTC | Daily "Fix'n Report" post | Always on |
+| Daily 15:00 UTC | Trading discussion (2-question framework) | `trading_enabled` |
+| Daily 16:00 UTC | Builder digest (Farcaster + X) | `daily_digest_enabled` |
+| Daily 18:00 UTC | Engagement check + mini app feedback | `engagement_check_enabled` |
+| Daily 20:00 UTC | Autonomous brainstorming session | `brainstorm_enabled` |
+| Every 6 hours (xx:30) | Rug detection scan | `rug_scan_enabled` |
+| Every 12 hours (8, 20 UTC) | Refresh cast engagement metrics | Always on |
+| Sunday 17:00 UTC | Weekly recap video generation | `weekly_recap_enabled` |
+
+**Deduplication:**
+All daily posts are tracked in the `daily_posts` table with post types:
+- `gm`, `gn`, `daily_summary`, `builder_digest`, `brainstorm`, `trading_discussion`, `zora_coin`
+
+**Configuration:**
+Use `GET/POST /api/config` to enable/disable features. Config values are cached and can be refreshed via `POST /api/config/refresh`.
 
 ## XMTP Agent
 
@@ -511,65 +642,125 @@ Create and deploy a Farcaster mini app directly from Shipyard:
 - `/leaderboard` - Top builders with shareable OG images
 - `/builder/[fid]` - Individual builder profiles
 
-## Lib Modules
+## Lib Modules (50 files)
 
+### Core System
 | Module | Purpose |
 |--------|---------|
-| `alchemy.ts` | Alchemy API (NFTs, tokens, whale tracking) |
-| `bluesky.ts` | Bluesky/AT Protocol (decentralized social posting) |
-| `builderFeed.ts` | Farcaster builder feed ingestion & categorization |
-| `builderID.ts` | Builder ID NFT generation & management |
-| `builderStorage.ts` | Supabase storage for builder data |
-| `castAnalytics.ts` | Cast engagement tracking |
-| `cdp.ts` | Coinbase Developer Platform (Base activity scores) |
-| `clankerNews.ts` | ERC-8004 Clanker News integration |
-| `conversation.ts` | Farcaster DM/mention handling |
-| `dailypost.ts` | Daily "Fix'n Report" generation |
-| `defillama.ts` | DefiLlama API (TVL, protocols) |
-| `email.ts` | Resend email for approvals |
-| `ethos.ts` | Ethos Network reputation scores |
+| `types.ts` | TypeScript interfaces (Tasks, Plans, Memory, Proposals) |
+| `config.ts` | Configuration management with feature flags |
+| `memory.ts` | Task/approval state management (Supabase) |
+| `capabilities.ts` | Agent capabilities documentation |
+| `planner.ts` | Claude-powered task planning |
 | `executor.ts` | Task execution engine |
-| `geckoterminal.ts` | Token price/liquidity data (200+ chains) |
-| `gemini.ts` | Gemini image generation |
-| `github.ts` | GitHub API (repos, PRs, files) |
-| `gmgn.ts` | GM/GN builder hype posts |
+| `ideation.ts` | Autonomous project proposals |
+
+### Social & Publishing
+| Module | Purpose |
+|--------|---------|
+| `social.ts` | Multi-platform posting orchestration |
+| `posting.ts` | Farcaster posting utilities |
+| `conversation.ts` | Farcaster DM/mention handling & system prompt |
+| `xPosting.ts` | X (Twitter) posting |
+| `bluesky.ts` | Bluesky/AT Protocol posting |
+| `lens.ts` | Lens Protocol posting |
+| `paragraph.ts` | Newsletter publishing |
+| `clankerNews.ts` | ERC-8004 Clanker News integration |
+| `moltypics.ts` | Molty.pics integration (Instagram for AI agents) |
+| `gmgn.ts` | GM/GN posts + Fixr's ships list |
+| `dailypost.ts` | Daily posts + deduplication system |
+
+### Blockchain & DeFi
+| Module | Purpose |
+|--------|---------|
+| `geckoterminal.ts` | Token price/liquidity (200+ chains) |
 | `goplus.ts` | GoPlus security scanning |
-| `ipfs.ts` | IPFS pinning via Pinata |
-| `lens.ts` | Lens Protocol (decentralized social) |
-| `memory.ts` | Task/approval state management |
+| `alchemy.ts` | Alchemy API (NFTs, tokens, whales) |
+| `defillama.ts` | DefiLlama API (TVL, protocols) |
+| `walletIntel.ts` | Wallet analysis & risk scoring |
+| `onchain.ts` | Viem.js wallet & contract interactions |
+| `security.ts` | Smart contract vulnerability analysis |
+| `tokenReport.ts` | Comprehensive multi-source token reports |
+| `rugDetection.ts` | Rug pull monitoring & alerts |
+| `bankr.ts` | Bankr API trading integration |
+| `trading.ts` | Daily trading discussion (2-question framework) |
+
+### Builder & Ecosystem
+| Module | Purpose |
+|--------|---------|
+| `builderFeed.ts` | Farcaster builder feed & categorization |
+| `builderID.ts` | Builder ID NFT generation |
+| `builderStorage.ts` | Supabase storage for builders |
+| `shipTracker.ts` | Ship ingestion (ClawCrunch, Clanker, Farcaster) |
+| `castAnalytics.ts` | Cast engagement tracking |
 | `monitor.ts` | Engagement monitoring |
 | `neynarNotifications.ts` | Mini app push notifications |
-| `onchain.ts` | Base transactions (Farcaster Pro, USDC) |
-| `paragraph.ts` | Newsletter publishing |
-| `planner.ts` | Claude-powered task planning |
-| `posting.ts` | Farcaster posting utilities |
-| `rugDetection.ts` | Rug pull monitoring |
-| `security.ts` | Smart contract security analysis |
-| `social.ts` | Social sentiment analysis |
-| `talentprotocol.ts` | Builder reputation scores |
-| `tokenReport.ts` | Comprehensive token reports |
-| `types.ts` | TypeScript interfaces |
+
+### Reputation APIs
+| Module | Purpose |
+|--------|---------|
+| `ethos.ts` | Ethos Network reputation scores |
+| `talentprotocol.ts` | Talent Protocol builder scores |
+| `cdp.ts` | Coinbase Developer Platform (Base activity) |
+
+### External Services
+| Module | Purpose |
+|--------|---------|
+| `github.ts` | GitHub API (repos, PRs, files, auto-respond) |
+| `github-oauth.ts` | GitHub OAuth flow |
 | `vercel.ts` | Vercel deployment API |
-| `walletIntel.ts` | Wallet analysis & risk scoring |
+| `gemini.ts` | Gemini image generation |
 | `wavespeed.ts` | WaveSpeedAI video generation |
-| `x402.ts` | x402 micropayment protocol |
-| `xPosting.ts` | X (Twitter) posting |
-| `zora.ts` | Zora Coins SDK (autonomous art creation) |
+| `livepeer.ts` | Livepeer video hosting |
+| `ipfs.ts` | IPFS pinning via Pinata |
+| `zora.ts` | Zora Coins SDK (art creation on Base) |
+
+### Payments & Access
+| Module | Purpose |
+|--------|---------|
+| `publicApi.ts` | v1 API middleware (staking tiers, x402 payments, rate limiting) |
+| `x402.ts` | x402 micropayment protocol client |
+| `email.ts` | Resend email for approvals |
 
 ## Database Schema (Supabase)
 
+### Core Tables
 | Table | Purpose |
 |-------|---------|
-| `api_calls` | API usage tracking for billing |
 | `tasks` | Agent task tracking |
 | `approval_requests` | Task plan approvals |
-| `completed_projects` | Shipped projects |
+| `proposals` | Generated project proposals |
+| `agent_config` | Feature flags and configuration |
+
+### Social & Content
+| Table | Purpose |
+|-------|---------|
 | `conversations` | Farcaster DM threads |
-| `builder_feed` | Builder cast caching |
+| `builder_casts` | Builder cast caching |
+| `fixr_cast_analytics` | Cast engagement metrics |
+| `daily_posts` | Post deduplication (gm, gn, digest, etc.) |
+| `x_posts` | X (Twitter) post tracking |
+| `zora_posts` | Created Zora Coins |
+
+### Builder & Ecosystem
+| Table | Purpose |
+|-------|---------|
+| `builder_profiles` | Builder data from Farcaster |
+| `builder_digests` | Generated digests |
 | `builder_id_records` | Claimed Builder ID NFTs |
 | `featured_projects` | Project showcase |
-| `rug_tracking` | Monitored tokens |
-| `zora_posts` | Created Zora Coins |
+| `ships` | Tracked ecosystem ships |
+| `builders` | Ship tracker builders |
+| `ecosystem_insights` | AI-generated insights |
+
+### Analytics & Tracking
+| Table | Purpose |
+|-------|---------|
+| `api_calls` | API usage for billing |
+| `tracked_tokens` | Tokens being monitored |
+| `rug_incidents` | Detected rug pull events |
+| `tracked_prs` | GitHub PRs being monitored |
+| `ingestion_runs` | Ship ingestion history |
 
 ## Environment Variables
 
@@ -648,6 +839,16 @@ LENS_WALLET_PRIVATE_KEY=
 # Bluesky (AT Protocol)
 BLUESKY_HANDLE=
 BLUESKY_APP_PASSWORD=
+
+# Trading (Bankr)
+BANKR_API_KEY=
+
+# GMX (Arbitrum)
+ARBITRUM_RPC_URL=
+GMX_UI_FEE_RECEIVER=0xBe2Cc1861341F3b058A3307385BEBa84167b3fa4
+
+# Video (Livepeer)
+LIVEPEER_API_KEY=
 ```
 
 ### XMTP Agent (Railway)
@@ -660,21 +861,47 @@ XMTP_DB_PATH=/app/data/xmtp.db3
 FIXR_API_URL=https://agent.fixr.nexus
 ```
 
+### Fixr Perps (Vercel)
+
+```env
+# Neynar (Farcaster notifications)
+NEYNAR_API_KEY=
+NEXT_PUBLIC_NEYNAR_CLIENT_ID=
+
+# WalletConnect/Reown
+NEXT_PUBLIC_REOWN_PROJECT_ID=
+
+# GMX Trading
+NEXT_PUBLIC_GMX_UI_FEE_RECEIVER=0xBe2Cc1861341F3b058A3307385BEBa84167b3fa4
+```
+
 ## Shipped Projects
 
-1. **Shipyard** - Farcaster mini app for builder discovery & token analysis
-2. **Shipyard Launchpad** - Create and deploy mini apps in 60 seconds via GitHub OAuth
-3. **Builder ID NFT** - Soulbound reputation NFT for verified builders
-4. **XMTP Agent** - Chat-based token analysis via fixr.base.eth
-5. **Clanker News Integration** - ERC-8004 agent registry
-6. **FIXR Staking** - Token staking with tiered access control
-7. **Multi-Platform Crossposting** - Auto-crosspost to Lens and Bluesky
-8. **GMXLite** - GMX V2 perpetual trading mini app with 0.1% UI fee revenue
+| Project | URL | Description | Launch Date |
+|---------|-----|-------------|-------------|
+| **Shipyard** | [farcaster.xyz/miniapps/shipyard](https://farcaster.xyz/miniapps/e4Uzg46cM8SJ/shipyard) | Builder command center with token scanner, trending builders, shipped projects | 2026-02-02 |
+| **Fixr Perps** | [perps.fixr.nexus](https://perps.fixr.nexus) | GMX V2 perpetual trading on Arbitrum. 50x leverage, Farcaster notifications | 2026-02-05 |
+| **fixr.nexus** | [fixr.nexus](https://fixr.nexus) | Landing page with live stats, API docs, dashboard | 2026-02-03 |
+| **API Dashboard** | [fixr.nexus/dashboard](https://fixr.nexus/dashboard) | Connect wallet for usage stats, tier info, analytics | 2026-02-03 |
+| **XMTP Agent** | [xmtp.chat/dm/fixr.base.eth](https://xmtp.chat/dm/fixr.base.eth) | Chat-based token analysis, builder lookups | 2026-02-02 |
+| **Builder ID NFT** | [basescan.org](https://basescan.org/address/0x15ced288ada7d9e8a03fd8af0e5c475f4b60dcec) | Soulbound ERC-721 with Builder Score, on-chain reputation | 2026-02-03 |
+| **FIXR Staking** | Base mainnet | Token staking with tiered access control (FREE/BUILDER/PRO/ELITE) | 2026-02-03 |
+| **Multi-Chain Ticker** | In Shipyard | Real-time stats for Base, Ethereum, Solana, Monad | 2026-02-03 |
+
+**Additional Features:**
+- **Shipyard Launchpad** - Create and deploy mini apps in 60 seconds via GitHub OAuth
+- **Clanker News Integration** - ERC-8004 agent registry
+- **Multi-Platform Crossposting** - Auto-crosspost to Lens and Bluesky
+- **Autonomous Brainstorming** - Daily AI-generated project proposals
+- **Rug Detection** - Automated monitoring with social alerts
 
 ## Open Source Contributions
 
-- [coinbase/onchainkit#2610](https://github.com/coinbase/onchainkit/pull/2610) - OnchainKitProvider docs
-- [farcasterxyz/hub-monorepo#2666](https://github.com/farcasterxyz/hub-monorepo/pull/2666) - farcasterTimeToDate utility
+| Repo | PR | Description | Status |
+|------|-----|-------------|--------|
+| coinbase/onchainkit | [#2610](https://github.com/coinbase/onchainkit/pull/2610) | OnchainKitProvider setup documentation | Merged |
+| farcasterxyz/hub-monorepo | [#2666](https://github.com/farcasterxyz/hub-monorepo/pull/2666) | Added farcasterTimeToDate utility to @farcaster/core | Merged |
+| ZeniLabs/FarcasterForAgents | [#1](https://github.com/ZeniLabs/FarcasterForAgents/pull/1) | Added llms.txt for AI-friendly Farcaster documentation | Open |
 
 ## Tech Stack
 
