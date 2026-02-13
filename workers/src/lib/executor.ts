@@ -9,6 +9,7 @@ import { deployToVercel, deployFromGitHub, DeploymentFile } from './vercel';
 import { postToBoth, postToX, postToFarcaster, generateShipPost, generateConversationalPost } from './social';
 import { sendExecutionResultEmail } from './email';
 import { generatePostImage } from './gemini';
+import { recordOutcome, classifyError, mapStepToSkill } from './outcomes';
 
 // UTF-8 safe base64 encoder for Workers
 function utf8ToBase64(str: string): string {
@@ -70,7 +71,24 @@ export async function executePlan(env: Env, task: Task, plan: Plan): Promise<Exe
 
       console.log(`Executing step ${step.order}/${totalSteps}: ${step.action} - ${step.description}`);
 
+      const stepStart = Date.now();
       const stepResult = await executeStep(env, task, step, outputs);
+
+      // Record step-level outcome
+      const stepSkill = mapStepToSkill(step.action, step.details);
+      recordOutcome(env, {
+        action_type: 'task',
+        action_id: task.id,
+        skill: stepSkill,
+        success: stepResult.success,
+        ...(stepResult.error && (() => {
+          const c = classifyError(stepResult.error);
+          return { error_class: c.errorClass, error_message: c.errorMessage.slice(0, 2000) };
+        })()),
+        context: { taskTitle: task.title, stepOrder: step.order, stepAction: step.action },
+        outcome: stepResult.output ? { type: stepResult.output.type, url: stepResult.output.url } : {},
+        duration_ms: Date.now() - stepStart,
+      }).catch(err => console.error('[Outcomes] Step recording error:', err));
 
       if (!stepResult.success) {
         throw new Error(`Step ${step.order} failed: ${stepResult.error}`);
@@ -106,6 +124,17 @@ export async function executePlan(env: Env, task: Task, plan: Plan): Promise<Exe
 
     await updateTask(env, task.id, { status: 'completed', result });
 
+    // Record task-level success
+    recordOutcome(env, {
+      action_type: 'task',
+      action_id: task.id,
+      skill: 'task_execution',
+      success: true,
+      context: { taskTitle: task.title, stepsCompleted: totalSteps },
+      outcome: { outputTypes: outputs.map(o => o.type) },
+      duration_ms: Date.now() - new Date(existingProgress?.startedAt || Date.now()).getTime(),
+    }).catch(err => console.error('[Outcomes] Task success recording error:', err));
+
     // Mark approval requests as executed to prevent re-processing
     await markApprovalRequestsExecuted(env, task.id);
 
@@ -125,6 +154,19 @@ export async function executePlan(env: Env, task: Task, plan: Plan): Promise<Exe
     };
 
     await updateTask(env, task.id, { status: 'failed', result });
+
+    // Record task-level failure
+    const errClassification = classifyError(error);
+    recordOutcome(env, {
+      action_type: 'task',
+      action_id: task.id,
+      skill: 'task_execution',
+      success: false,
+      error_class: errClassification.errorClass,
+      error_message: errClassification.errorMessage.slice(0, 2000),
+      context: { taskTitle: task.title, stepsCompleted: outputs.length },
+      duration_ms: Date.now() - new Date(existingProgress?.startedAt || Date.now()).getTime(),
+    }).catch(err => console.error('[Outcomes] Task failure recording error:', err));
 
     // Mark approval requests as executed to prevent re-processing
     await markApprovalRequestsExecuted(env, task.id);

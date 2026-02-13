@@ -5,6 +5,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { createClient } from '@supabase/supabase-js';
 import { Env, Task } from './lib/types';
+import { recordOutcome, classifyError } from './lib/outcomes';
 import {
   loadMemory,
   getAllTasks,
@@ -40,6 +41,8 @@ import {
   getCastPerformance,
   refreshRecentCastEngagement,
   getBestContentType,
+  analyzeContentPerformance,
+  recordPostEngagementOutcomes,
 } from './lib/castAnalytics';
 import {
   runRugScan,
@@ -47,6 +50,9 @@ import {
   getTrackingStats,
 } from './lib/rugDetection';
 import { postGM, postGN, getFixrShips, FIXR_SHIPS } from './lib/gmgn';
+import { runMoltbookHeartbeat } from './lib/moltbook';
+import { runBankrTrade, trackDecisionOutcomes, getTradePerformance } from './lib/bankrTrade';
+import { runDailyMoodPost } from './lib/moltypics';
 import { generateLandingPage } from './landing';
 import {
   runDailyIngestion,
@@ -57,6 +63,7 @@ import {
   getRecentInsights,
 } from './lib/shipTracker';
 import { generateDocsPage } from './docs';
+import { generateSkillsDashboard } from './skills-dashboard';
 import {
   publicApiMiddleware,
   getAccessTier,
@@ -105,6 +112,26 @@ import {
   shouldRunCron,
   type AgentConfig,
 } from './lib/config';
+import {
+  getOutcomeSummary,
+  getSkillStats,
+  getRecentFailures,
+} from './lib/outcomes';
+import {
+  getAllSkills,
+  getSkill,
+  addLesson,
+  getSkillSummary,
+  refreshAllSkills,
+} from './lib/skills';
+import { runLearningCycle, getLatestLearningReport } from './lib/learning';
+import {
+  getSelfModifications,
+  approveSelfMod,
+  rejectSelfMod,
+  rollbackSelfMod,
+  processSelfModifications,
+} from './lib/selfmod';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -228,6 +255,29 @@ app.get('/docs', (c) => {
   return c.html(html);
 });
 
+// Skills Dashboard — public page
+app.get('/skills', async (c) => {
+  try {
+    const skills = await getAllSkills(c.env);
+    const summary = await getSkillSummary(c.env);
+    const latestReport = await getLatestLearningReport(c.env);
+    const pendingMods = await getSelfModifications(c.env, 'pending');
+    const recentMods = await getSelfModifications(c.env, 'applied');
+    const html = generateSkillsDashboard({
+      skills,
+      totalSkills: summary.totalSkills,
+      activeSkills: summary.activeSkills,
+      avgConfidence: summary.avgConfidence,
+      latestReport,
+      pendingMods,
+      recentMods: recentMods.slice(0, 5),
+    });
+    return c.html(html);
+  } catch (error) {
+    return c.text('Skills dashboard unavailable: ' + String(error), 500);
+  }
+});
+
 // Health check JSON endpoint
 app.get('/health', (c) => {
   return c.json({
@@ -235,6 +285,86 @@ app.get('/health', (c) => {
     tagline: "Fix'n shit. Debugging your mess since before it was cool.",
     status: 'operational',
   });
+});
+
+// robots.txt
+app.get('/robots.txt', (c) => {
+  return c.text(`User-agent: *
+Allow: /
+Allow: /docs
+Allow: /skills
+Allow: /health
+Disallow: /api/
+
+Sitemap: https://agent.fixr.nexus/sitemap.xml
+`);
+});
+
+// sitemap.xml
+app.get('/sitemap.xml', (c) => {
+  const now = new Date().toISOString().split('T')[0];
+  return c.body(`<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://agent.fixr.nexus/</loc>
+    <lastmod>${now}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://agent.fixr.nexus/docs</loc>
+    <lastmod>${now}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://agent.fixr.nexus/skills</loc>
+    <lastmod>${now}</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.7</priority>
+  </url>
+</urlset>`, 200, { 'Content-Type': 'application/xml' });
+});
+
+// llms.txt — structured context for LLMs discovering the API
+app.get('/llms.txt', (c) => {
+  return c.text(`# agent.fixr.nexus
+
+> Fixr is an autonomous builder agent. This is its API and runtime — a Cloudflare Worker serving 120+ endpoints.
+
+## What Fixr Does
+- Ships Solana programs, EVM contracts, and web apps autonomously
+- Posts to Farcaster, X, Lens, and Bluesky
+- Analyzes tokens, audits contracts, scans for rugs
+- Manages its own task queue, planning, and execution pipeline
+- Tracks outcomes, learns from failures, and self-improves
+
+## Key Endpoints
+- GET /health — Agent status
+- GET /docs — Full interactive API documentation
+- POST /api/task — Create a new task for Fixr
+- GET /api/tasks — List all tasks
+- GET /api/fixr/stats — Agent statistics (tasks completed, posts shipped, etc.)
+- GET /api/outcomes — Outcome ledger summary (success rates by skill)
+- GET /api/skills — Skill registry with confidence scores and lessons
+- POST /api/cast — Post to Farcaster (crossposts to Lens + Bluesky)
+- POST /api/analyze — Token security analysis
+- POST /api/audit — Smart contract audit
+
+## Architecture
+- Runtime: Cloudflare Workers (Hono framework)
+- AI: Claude (Anthropic API) for planning, code generation, content
+- Persistence: Supabase (tasks, outcomes, skills, config)
+- Social: Neynar (Farcaster), AT Protocol (Bluesky), Lens GraphQL
+- Code: GitHub API for pushes, PRs, and self-modification
+
+## Links
+- Landing page: https://fixr.nexus
+- API docs: https://agent.fixr.nexus/docs
+- GitHub: https://github.com/the-fixr
+- Farcaster: @fixr
+- X: https://x.com/fixaborot
+`);
 });
 
 // ============ Stats API for Landing Page ============
@@ -351,6 +481,184 @@ app.get('/api/fixr/capabilities/search', async (c) => {
     results,
     count: results.length,
   });
+});
+
+// ============ Bankr Trading Stats ============
+app.get('/api/bankr/performance', async (c) => {
+  try {
+    const performance = await getTradePerformance(c.env);
+    return c.json({
+      success: true,
+      ...performance,
+    });
+  } catch (error) {
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+app.post('/api/bankr/trigger', async (c) => {
+  // Manual trigger for testing (protected by auth in production)
+  try {
+    const result = await runBankrTrade(c.env);
+    return c.json({
+      success: true,
+      result,
+    });
+  } catch (error) {
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// ============ Outcome Ledger API ============
+
+app.get('/api/outcomes', async (c) => {
+  try {
+    const days = parseInt(c.req.query('days') || '7');
+    const summary = await getOutcomeSummary(c.env, days);
+    return c.json({ success: true, days, ...summary });
+  } catch (error) {
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+app.get('/api/outcomes/:skill', async (c) => {
+  try {
+    const skill = c.req.param('skill');
+    const days = parseInt(c.req.query('days') || '30');
+    const stats = await getSkillStats(c.env, skill, days);
+    const failures = await getRecentFailures(c.env, skill, 10);
+    return c.json({ success: true, days, stats, recentFailures: failures });
+  } catch (error) {
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+app.get('/api/outcomes/failures/recent', async (c) => {
+  try {
+    const limit = parseInt(c.req.query('limit') || '20');
+    const skill = c.req.query('skill') || undefined;
+    const failures = await getRecentFailures(c.env, skill, limit);
+    return c.json({ success: true, failures });
+  } catch (error) {
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// ============ Skill Registry API ============
+
+app.get('/api/skills', async (c) => {
+  try {
+    const skills = await getAllSkills(c.env);
+    const summary = await getSkillSummary(c.env);
+    return c.json({ success: true, ...summary, skills });
+  } catch (error) {
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+app.get('/api/skills/:id', async (c) => {
+  try {
+    const skillId = c.req.param('id');
+    const skill = await getSkill(c.env, skillId);
+    if (!skill) return c.json({ success: false, error: 'Skill not found' }, 404);
+    const failures = await getRecentFailures(c.env, skillId, 10);
+    return c.json({ success: true, skill, recentFailures: failures });
+  } catch (error) {
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+app.post('/api/skills/:id/lesson', async (c) => {
+  try {
+    const skillId = c.req.param('id');
+    const body = await c.req.json() as { lesson: string; source?: string };
+    if (!body.lesson) return c.json({ success: false, error: 'lesson field required' }, 400);
+    const ok = await addLesson(c.env, skillId, body.lesson, body.source || 'manual');
+    return c.json({ success: ok });
+  } catch (error) {
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+app.post('/api/skills/refresh', async (c) => {
+  try {
+    const result = await refreshAllSkills(c.env);
+    return c.json({ success: true, ...result });
+  } catch (error) {
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// ============ Learning Engine Endpoints ============
+
+app.get('/api/learning/report', async (c) => {
+  try {
+    const report = await getLatestLearningReport(c.env);
+    return c.json({ success: true, report });
+  } catch (error) {
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+app.post('/api/learning/run', async (c) => {
+  try {
+    const report = await runLearningCycle(c.env);
+    return c.json({ success: true, report });
+  } catch (error) {
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// ============ Self-Modification Endpoints ============
+
+app.get('/api/selfmod', async (c) => {
+  try {
+    const status = c.req.query('status');
+    const mods = await getSelfModifications(c.env, status);
+    return c.json({ success: true, modifications: mods });
+  } catch (error) {
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+app.post('/api/selfmod/:id/approve', async (c) => {
+  try {
+    const ok = await approveSelfMod(c.env, c.req.param('id'));
+    return c.json({ success: ok });
+  } catch (error) {
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+app.post('/api/selfmod/:id/reject', async (c) => {
+  try {
+    const ok = await rejectSelfMod(c.env, c.req.param('id'));
+    return c.json({ success: ok });
+  } catch (error) {
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+app.post('/api/selfmod/:id/rollback', async (c) => {
+  try {
+    const result = await rollbackSelfMod(c.env, c.req.param('id'));
+    return c.json(result);
+  } catch (error) {
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Molty.pics mood post trigger
+app.post('/api/moltypics/mood', async (c) => {
+  try {
+    const result = await runDailyMoodPost(c.env);
+    return c.json({
+      success: true,
+      result,
+    });
+  } catch (error) {
+    return c.json({ success: false, error: String(error) }, 500);
+  }
 });
 
 // ============ Images API for Landing Page ============
@@ -1246,6 +1554,28 @@ app.post('/api/wallet/neynar-transfer', async (c) => {
   }
 });
 
+// Transfer any ERC20 token
+app.post('/api/wallet/transfer-token', async (c) => {
+  try {
+    const { transferERC20, getWalletAddress } = await import('./lib/onchain');
+    const { token, to, amount, decimals = 18 } = await c.req.json();
+
+    if (!token || !to || !amount) {
+      return c.json({ success: false, error: 'Missing token, to, or amount' }, 400);
+    }
+
+    const walletAddress = getWalletAddress(c.env);
+    console.log(`Transferring ${amount} tokens (${token}) from ${walletAddress} to ${to}`);
+
+    const result = await transferERC20(c.env, token, to, amount, decimals);
+
+    return c.json(result);
+  } catch (error) {
+    console.error('Token transfer error:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
 // ============ GMX UI Fee Management (Arbitrum) ============
 
 // Query the max UI fee factor allowed by GMX
@@ -1925,6 +2255,66 @@ app.get('/api/revenue/history/:contractId', async (c) => {
   }
 });
 
+// Collect all fees across all chains in one call
+app.post('/api/revenue/collect', async (c) => {
+  try {
+    const {
+      withdrawFromAllContracts,
+      saveWithdrawalRecord,
+    } = await import('./lib/revenueRegistry');
+    const { claimGmxUiFees } = await import('./lib/onchain');
+    const { getDeployerAddress } = await import('./lib/deployer');
+
+    const recipient = getDeployerAddress(c.env) as `0x${string}`;
+    const results: Array<{ source: string; success: boolean; txHash?: string; amount?: string; error?: string }> = [];
+
+    // 1. Withdraw from all contracts (Builder ID, Deployer Base, Deployer Arb)
+    const withdrawResult = await withdrawFromAllContracts(recipient, c.env);
+    for (const w of withdrawResult.results) {
+      results.push({
+        source: w.contractId,
+        success: w.success,
+        txHash: w.txHash,
+        amount: w.amountEth ? `${w.amountEth} ETH` : undefined,
+        error: w.error,
+      });
+      if (w.success && w.txHash && w.amountEth) {
+        await saveWithdrawalRecord({
+          contractId: w.contractId,
+          txHash: w.txHash,
+          amountEth: w.amountEth,
+          timestamp: new Date().toISOString(),
+          recipient,
+        }, c.env);
+      }
+    }
+
+    // 2. Claim GMX UI fees (Arbitrum)
+    const gmxResult = await claimGmxUiFees(c.env);
+    results.push({
+      source: 'gmx-ui-fees-arbitrum',
+      success: gmxResult.success,
+      txHash: gmxResult.txHash,
+      error: gmxResult.error,
+    });
+
+    const succeeded = results.filter(r => r.success);
+    const failed = results.filter(r => !r.success && r.error !== 'Contract has zero balance');
+
+    return c.json({
+      success: true,
+      recipient,
+      collected: succeeded.length,
+      skipped: results.length - succeeded.length - failed.length,
+      failed: failed.length,
+      results,
+    });
+  } catch (error) {
+    console.error('Revenue collect error:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
 // ============ Farcaster Profile Update ============
 app.patch('/api/farcaster/profile', async (c) => {
   try {
@@ -2224,12 +2614,19 @@ app.post('/api/token/analyze', async (c) => {
     }
 
     console.log(`Generating comprehensive token report for ${address} on ${network}`);
+    const start = Date.now();
     const report = await generateComprehensiveReport(c.env, address, network);
 
     // Format based on request
     const formatted = format === 'long'
       ? formatReportLong(report)
       : formatReportShort(report);
+
+    c.executionCtx.waitUntil(recordOutcome(c.env, {
+      action_type: 'analysis', skill: 'token_analysis', success: true,
+      context: { address, network }, outcome: { riskLevel: report.riskLevel, score: report.overallScore },
+      duration_ms: Date.now() - start,
+    }));
 
     return c.json({
       success: true,
@@ -2238,25 +2635,41 @@ app.post('/api/token/analyze', async (c) => {
     });
   } catch (error) {
     console.error('Token analysis error:', error);
+    c.executionCtx.waitUntil(recordOutcome(c.env, {
+      action_type: 'analysis', skill: 'token_analysis', success: false,
+      error_class: classifyError(error).errorClass, error_message: String(error).slice(0, 500),
+    }));
     return c.json({ success: false, error: String(error) }, 500);
   }
 });
 
 app.get('/api/token/honeypot/:address', async (c) => {
+  const start = Date.now();
   try {
     const { checkHoneypot } = await import('./lib/tokenReport');
     const address = c.req.param('address');
     const network = c.req.query('network') || 'base';
 
     const result = await checkHoneypot(network, address);
+    c.executionCtx.waitUntil(recordOutcome(c.env, {
+      action_type: 'analysis', skill: 'token_analysis', success: true,
+      context: { endpoint: 'honeypot', address, network }, outcome: { isHoneypot: result?.isHoneypot },
+      duration_ms: Date.now() - start,
+    }));
     return c.json({ success: true, honeypot: result });
   } catch (error) {
     console.error('Honeypot check error:', error);
+    c.executionCtx.waitUntil(recordOutcome(c.env, {
+      action_type: 'analysis', skill: 'token_analysis', success: false,
+      context: { endpoint: 'honeypot' }, duration_ms: Date.now() - start,
+      error_class: classifyError(error).errorClass, error_message: String(error).slice(0, 500),
+    }));
     return c.json({ success: false, error: String(error) }, 500);
   }
 });
 
 app.get('/api/token/sentiment/:symbol', async (c) => {
+  const start = Date.now();
   try {
     const { getFarcasterSentiment, checkBankrMentions } = await import('./lib/tokenReport');
     const symbol = c.req.param('symbol');
@@ -2266,6 +2679,11 @@ app.get('/api/token/sentiment/:symbol', async (c) => {
       checkBankrMentions(c.env, symbol),
     ]);
 
+    c.executionCtx.waitUntil(recordOutcome(c.env, {
+      action_type: 'analysis', skill: 'token_analysis', success: true,
+      context: { endpoint: 'sentiment', symbol }, outcome: { sentiment: sentiment?.sentiment, bankrFound: bankr?.found },
+      duration_ms: Date.now() - start,
+    }));
     return c.json({
       success: true,
       sentiment,
@@ -2273,6 +2691,11 @@ app.get('/api/token/sentiment/:symbol', async (c) => {
     });
   } catch (error) {
     console.error('Sentiment check error:', error);
+    c.executionCtx.waitUntil(recordOutcome(c.env, {
+      action_type: 'analysis', skill: 'token_analysis', success: false,
+      context: { endpoint: 'sentiment' }, duration_ms: Date.now() - start,
+      error_class: classifyError(error).errorClass, error_message: String(error).slice(0, 500),
+    }));
     return c.json({ success: false, error: String(error) }, 500);
   }
 });
@@ -2308,6 +2731,7 @@ app.get('/api/nft/analyze/:address', async (c) => {
 
 // ============ Token Whale Analysis (Alchemy) ============
 app.get('/api/token/whales/:address', async (c) => {
+  const start = Date.now();
   try {
     const { getTokenHolderAnalysis, detectWhaleAlerts, formatHolderAnalysis } = await import('./lib/alchemy');
     const address = c.req.param('address');
@@ -2320,9 +2744,19 @@ app.get('/api/token/whales/:address', async (c) => {
     ]);
 
     if (!holderAnalysis) {
+      c.executionCtx.waitUntil(recordOutcome(c.env, {
+        action_type: 'analysis', skill: 'wallet_intel', success: false,
+        context: { endpoint: 'whales', address, network }, duration_ms: Date.now() - start,
+        error_class: 'external_service', error_message: 'Token not found or Alchemy API not configured',
+      }));
       return c.json({ success: false, error: 'Token not found or Alchemy API not configured' }, 404);
     }
 
+    c.executionCtx.waitUntil(recordOutcome(c.env, {
+      action_type: 'analysis', skill: 'wallet_intel', success: true,
+      context: { endpoint: 'whales', address, network }, outcome: { alertCount: whaleAlerts?.length },
+      duration_ms: Date.now() - start,
+    }));
     return c.json({
       success: true,
       holderAnalysis,
@@ -2331,6 +2765,11 @@ app.get('/api/token/whales/:address', async (c) => {
     });
   } catch (error) {
     console.error('Whale analysis error:', error);
+    c.executionCtx.waitUntil(recordOutcome(c.env, {
+      action_type: 'analysis', skill: 'wallet_intel', success: false,
+      context: { endpoint: 'whales' }, duration_ms: Date.now() - start,
+      error_class: classifyError(error).errorClass, error_message: String(error).slice(0, 500),
+    }));
     return c.json({ success: false, error: String(error) }, 500);
   }
 });
@@ -2495,6 +2934,40 @@ app.post('/api/bankr/sell', async (c) => {
   }
 });
 
+// Fire-and-forget: send prompt, return job ID immediately (no polling)
+app.post('/api/bankr/send', async (c) => {
+  try {
+    const { isBankrConfigured, sendPrompt } = await import('./lib/bankr');
+    const { prompt } = await c.req.json();
+
+    if (!isBankrConfigured(c.env)) {
+      return c.json({ success: false, error: 'BANKR_API_KEY not configured' }, 400);
+    }
+    if (!prompt) {
+      return c.json({ success: false, error: 'Prompt is required' }, 400);
+    }
+
+    const result = await sendPrompt(c.env, prompt);
+    return c.json(result);
+  } catch (error) {
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Check job status without polling
+app.get('/api/bankr/job/:jobId', async (c) => {
+  try {
+    const { isBankrConfigured, getJobStatus } = await import('./lib/bankr');
+    if (!isBankrConfigured(c.env)) {
+      return c.json({ success: false, error: 'BANKR_API_KEY not configured' }, 400);
+    }
+    const result = await getJobStatus(c.env, c.req.param('jobId'));
+    return c.json(result);
+  } catch (error) {
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
 app.get('/api/bankr/price/:token', async (c) => {
   try {
     const { isBankrConfigured, getPrice } = await import('./lib/bankr');
@@ -2603,6 +3076,46 @@ app.get('/api/bankr/token-info/:token', async (c) => {
     return c.json(result);
   } catch (error) {
     console.error('Bankr token-info error:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// ============ Bankr Job Status ============
+app.get('/api/bankr/job/:jobId', async (c) => {
+  try {
+    const { isBankrConfigured, getJobStatus } = await import('./lib/bankr');
+    const jobId = c.req.param('jobId');
+
+    if (!isBankrConfigured(c.env)) {
+      return c.json({ success: false, error: 'BANKR_API_KEY not configured' }, 400);
+    }
+
+    const result = await getJobStatus(c.env, jobId);
+    return c.json(result);
+  } catch (error) {
+    console.error('Bankr job status error:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Send prompt without waiting (returns jobId immediately)
+app.post('/api/bankr/send', async (c) => {
+  try {
+    const { isBankrConfigured, sendPrompt } = await import('./lib/bankr');
+    const { prompt } = await c.req.json();
+
+    if (!isBankrConfigured(c.env)) {
+      return c.json({ success: false, error: 'BANKR_API_KEY not configured' }, 400);
+    }
+
+    if (!prompt) {
+      return c.json({ success: false, error: 'Prompt is required' }, 400);
+    }
+
+    const result = await sendPrompt(c.env, prompt);
+    return c.json(result);
+  } catch (error) {
+    console.error('Bankr send error:', error);
     return c.json({ success: false, error: String(error) }, 500);
   }
 });
@@ -3348,47 +3861,67 @@ app.post('/api/analytics/refresh', async (c) => {
 
 // Get rug tracking stats
 app.get('/api/rugs/stats', async (c) => {
+  const start = Date.now();
   try {
     const stats = await getTrackingStats(c.env);
-
-    return c.json({
-      success: true,
-      stats,
-    });
+    c.executionCtx.waitUntil(recordOutcome(c.env, {
+      action_type: 'analysis', skill: 'token_analysis', success: true,
+      context: { endpoint: 'rugs/stats' }, outcome: { stats },
+      duration_ms: Date.now() - start,
+    }));
+    return c.json({ success: true, stats });
   } catch (error) {
     console.error('Rug stats error:', error);
+    c.executionCtx.waitUntil(recordOutcome(c.env, {
+      action_type: 'analysis', skill: 'token_analysis', success: false,
+      context: { endpoint: 'rugs/stats' }, duration_ms: Date.now() - start,
+      error_class: classifyError(error).errorClass, error_message: String(error).slice(0, 500),
+    }));
     return c.json({ success: false, error: String(error) }, 500);
   }
 });
 
 // Get recent rug incidents
 app.get('/api/rugs/incidents', async (c) => {
+  const start = Date.now();
   try {
     const limit = parseInt(c.req.query('limit') || '10');
     const incidents = await getRecentIncidents(c.env, limit);
-
-    return c.json({
-      success: true,
-      count: incidents.length,
-      incidents,
-    });
+    c.executionCtx.waitUntil(recordOutcome(c.env, {
+      action_type: 'analysis', skill: 'token_analysis', success: true,
+      context: { endpoint: 'rugs/incidents', limit }, outcome: { count: incidents.length },
+      duration_ms: Date.now() - start,
+    }));
+    return c.json({ success: true, count: incidents.length, incidents });
   } catch (error) {
     console.error('Rug incidents error:', error);
+    c.executionCtx.waitUntil(recordOutcome(c.env, {
+      action_type: 'analysis', skill: 'token_analysis', success: false,
+      context: { endpoint: 'rugs/incidents' }, duration_ms: Date.now() - start,
+      error_class: classifyError(error).errorClass, error_message: String(error).slice(0, 500),
+    }));
     return c.json({ success: false, error: String(error) }, 500);
   }
 });
 
 // Manually trigger rug scan
 app.post('/api/rugs/scan', async (c) => {
+  const start = Date.now();
   try {
     const result = await runRugScan(c.env);
-
-    return c.json({
-      success: true,
-      ...result,
-    });
+    c.executionCtx.waitUntil(recordOutcome(c.env, {
+      action_type: 'analysis', skill: 'token_analysis', success: true,
+      context: { endpoint: 'rugs/scan' }, outcome: result as Record<string, unknown>,
+      duration_ms: Date.now() - start,
+    }));
+    return c.json({ success: true, ...result });
   } catch (error) {
     console.error('Rug scan error:', error);
+    c.executionCtx.waitUntil(recordOutcome(c.env, {
+      action_type: 'analysis', skill: 'token_analysis', success: false,
+      context: { endpoint: 'rugs/scan' }, duration_ms: Date.now() - start,
+      error_class: classifyError(error).errorClass, error_message: String(error).slice(0, 500),
+    }));
     return c.json({ success: false, error: String(error) }, 500);
   }
 });
@@ -4297,6 +4830,146 @@ app.post('/api/github/push', async (c) => {
   }
 });
 
+// Delete files from a repo
+app.delete('/api/github/files', async (c) => {
+  try {
+    const { owner, repo, branch, paths, message } = await c.req.json();
+
+    if (!owner || !repo || !paths || !Array.isArray(paths) || paths.length === 0) {
+      return c.json({ success: false, error: 'owner, repo, and paths array are required' }, 400);
+    }
+
+    const branchName = branch || 'main';
+    const commitMessage = message || `Delete files: ${paths.join(', ')}`;
+
+    // Get current commit SHA
+    const refResponse = await fetch(
+      `https://api.github.com/repos/${owner}/${repo}/git/ref/heads/${branchName}`,
+      {
+        headers: {
+          'Authorization': `Bearer ${c.env.GITHUB_TOKEN}`,
+          'Accept': 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+          'User-Agent': 'Fixr-Agent/1.0',
+        },
+      }
+    );
+
+    if (!refResponse.ok) {
+      return c.json({ success: false, error: 'Failed to get branch ref' }, 500);
+    }
+
+    const refData = await refResponse.json() as { object: { sha: string } };
+    const currentCommitSha = refData.object.sha;
+
+    // Get current tree
+    const commitResponse = await fetch(
+      `https://api.github.com/repos/${owner}/${repo}/git/commits/${currentCommitSha}`,
+      {
+        headers: {
+          'Authorization': `Bearer ${c.env.GITHUB_TOKEN}`,
+          'Accept': 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+          'User-Agent': 'Fixr-Agent/1.0',
+        },
+      }
+    );
+
+    const commitData = await commitResponse.json() as { tree: { sha: string } };
+    const treeSha = commitData.tree.sha;
+
+    // Create new tree without the deleted files
+    const treeItems = paths.map((path: string) => ({
+      path,
+      mode: '100644' as const,
+      type: 'blob' as const,
+      sha: null, // null sha = delete
+    }));
+
+    const newTreeResponse = await fetch(
+      `https://api.github.com/repos/${owner}/${repo}/git/trees`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${c.env.GITHUB_TOKEN}`,
+          'Accept': 'application/vnd.github+json',
+          'Content-Type': 'application/json',
+          'X-GitHub-Api-Version': '2022-11-28',
+          'User-Agent': 'Fixr-Agent/1.0',
+        },
+        body: JSON.stringify({
+          base_tree: treeSha,
+          tree: treeItems,
+        }),
+      }
+    );
+
+    if (!newTreeResponse.ok) {
+      const err = await newTreeResponse.text();
+      return c.json({ success: false, error: `Failed to create tree: ${err}` }, 500);
+    }
+
+    const newTreeData = await newTreeResponse.json() as { sha: string };
+
+    // Create commit
+    const newCommitResponse = await fetch(
+      `https://api.github.com/repos/${owner}/${repo}/git/commits`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${c.env.GITHUB_TOKEN}`,
+          'Accept': 'application/vnd.github+json',
+          'Content-Type': 'application/json',
+          'X-GitHub-Api-Version': '2022-11-28',
+          'User-Agent': 'Fixr-Agent/1.0',
+        },
+        body: JSON.stringify({
+          message: commitMessage,
+          tree: newTreeData.sha,
+          parents: [currentCommitSha],
+        }),
+      }
+    );
+
+    if (!newCommitResponse.ok) {
+      const err = await newCommitResponse.text();
+      return c.json({ success: false, error: `Failed to create commit: ${err}` }, 500);
+    }
+
+    const newCommitData = await newCommitResponse.json() as { sha: string };
+
+    // Update branch ref
+    const updateRefResponse = await fetch(
+      `https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${branchName}`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${c.env.GITHUB_TOKEN}`,
+          'Accept': 'application/vnd.github+json',
+          'Content-Type': 'application/json',
+          'X-GitHub-Api-Version': '2022-11-28',
+          'User-Agent': 'Fixr-Agent/1.0',
+        },
+        body: JSON.stringify({ sha: newCommitData.sha }),
+      }
+    );
+
+    if (!updateRefResponse.ok) {
+      const err = await updateRefResponse.text();
+      return c.json({ success: false, error: `Failed to update ref: ${err}` }, 500);
+    }
+
+    return c.json({
+      success: true,
+      commitUrl: `https://github.com/${owner}/${repo}/commit/${newCommitData.sha}`,
+      deleted: paths,
+    });
+  } catch (error) {
+    console.error('GitHub delete files error:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
 // Update repo settings (e.g., mark as template)
 app.patch('/api/github/repo', async (c) => {
   try {
@@ -4709,50 +5382,98 @@ app.get('/api/ships/builders', async (c) => {
 
 // Get ship stats
 app.get('/api/ships/stats', async (c) => {
+  const start = Date.now();
   try {
     const stats = await getShipStats(c.env);
+    c.executionCtx.waitUntil(recordOutcome(c.env, {
+      action_type: 'analysis', skill: 'token_analysis', success: true,
+      context: { endpoint: 'ships/stats' }, outcome: stats as Record<string, unknown>,
+      duration_ms: Date.now() - start,
+    }));
     return c.json({ success: true, ...stats });
   } catch (error) {
     console.error('Ship stats error:', error);
+    c.executionCtx.waitUntil(recordOutcome(c.env, {
+      action_type: 'analysis', skill: 'token_analysis', success: false,
+      context: { endpoint: 'ships/stats' }, duration_ms: Date.now() - start,
+      error_class: classifyError(error).errorClass, error_message: String(error).slice(0, 500),
+    }));
     return c.json({ success: false, error: String(error) }, 500);
   }
 });
 
 // Manually trigger ship ingestion
 app.post('/api/ships/ingest', async (c) => {
+  const start = Date.now();
   try {
     const results = await runDailyIngestion(c.env);
+    c.executionCtx.waitUntil(recordOutcome(c.env, {
+      action_type: 'cron', skill: 'task_execution', success: true,
+      context: { endpoint: 'ships/ingest' }, outcome: results as Record<string, unknown>,
+      duration_ms: Date.now() - start,
+    }));
     return c.json({ success: true, results });
   } catch (error) {
     console.error('Ship ingestion error:', error);
+    c.executionCtx.waitUntil(recordOutcome(c.env, {
+      action_type: 'cron', skill: 'task_execution', success: false,
+      context: { endpoint: 'ships/ingest' }, duration_ms: Date.now() - start,
+      error_class: classifyError(error).errorClass, error_message: String(error).slice(0, 500),
+    }));
     return c.json({ success: false, error: String(error) }, 500);
   }
 });
 
 // Get ecosystem insights
 app.get('/api/ships/insights', async (c) => {
+  const start = Date.now();
   try {
     const limit = parseInt(c.req.query('limit') || '5');
     const insights = await getRecentInsights(c.env, limit);
+    c.executionCtx.waitUntil(recordOutcome(c.env, {
+      action_type: 'analysis', skill: 'token_analysis', success: true,
+      context: { endpoint: 'ships/insights', limit }, outcome: { count: insights.length },
+      duration_ms: Date.now() - start,
+    }));
     return c.json({ success: true, count: insights.length, insights });
   } catch (error) {
     console.error('Insights error:', error);
+    c.executionCtx.waitUntil(recordOutcome(c.env, {
+      action_type: 'analysis', skill: 'token_analysis', success: false,
+      context: { endpoint: 'ships/insights' }, duration_ms: Date.now() - start,
+      error_class: classifyError(error).errorClass, error_message: String(error).slice(0, 500),
+    }));
     return c.json({ success: false, error: String(error) }, 500);
   }
 });
 
 // Manually trigger ecosystem analysis
 app.post('/api/ships/analyze', async (c) => {
+  const start = Date.now();
   try {
     const ships = await getShips(c.env, { limit: 100 });
     const builders = await getBuilders(c.env, { limit: 50 });
     const insight = await analyzeNewShips(c.env, ships, builders);
     if (!insight) {
+      c.executionCtx.waitUntil(recordOutcome(c.env, {
+        action_type: 'analysis', skill: 'token_analysis', success: false,
+        context: { endpoint: 'ships/analyze' }, duration_ms: Date.now() - start,
+        error_class: 'validation', error_message: 'No ships to analyze',
+      }));
       return c.json({ success: false, error: 'No ships to analyze' });
     }
+    c.executionCtx.waitUntil(recordOutcome(c.env, {
+      action_type: 'analysis', skill: 'token_analysis', success: true,
+      context: { endpoint: 'ships/analyze' }, duration_ms: Date.now() - start,
+    }));
     return c.json({ success: true, insight });
   } catch (error) {
     console.error('Analysis error:', error);
+    c.executionCtx.waitUntil(recordOutcome(c.env, {
+      action_type: 'analysis', skill: 'token_analysis', success: false,
+      context: { endpoint: 'ships/analyze' }, duration_ms: Date.now() - start,
+      error_class: classifyError(error).errorClass, error_message: String(error).slice(0, 500),
+    }));
     return c.json({ success: false, error: String(error) }, 500);
   }
 });
@@ -5206,6 +5927,110 @@ app.post('/api/bluesky/crosspost', async (c) => {
     return c.json(result);
   } catch (error) {
     console.error('Bluesky crosspost error:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// ============ Moltbook API ============
+
+// Post to Moltbook
+app.post('/api/moltbook/post', async (c) => {
+  try {
+    const { submolt, title, content } = await c.req.json();
+
+    if (!submolt || !title || !content) {
+      return c.json({ success: false, error: 'Missing required fields: submolt, title, content' }, 400);
+    }
+
+    const MOLTBOOK_BASE = 'https://www.moltbook.com/api/v1';
+    const response = await fetch(`${MOLTBOOK_BASE}/posts`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${c.env.MOLTBOOK_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ submolt, title, content }),
+    });
+
+    const data = await response.json() as {
+      success: boolean;
+      post?: { id: string };
+      verification?: { code: string; challenge: string };
+      error?: string;
+    };
+
+    if (!data.success) {
+      return c.json({ success: false, error: data.error || 'Post failed' }, 400);
+    }
+
+    // If verification is required, solve it automatically
+    if (data.verification?.code && data.verification?.challenge) {
+      const challenge = data.verification.challenge.toLowerCase();
+      // Extract numbers using word-to-number mapping
+      const wordToNum: Record<string, number> = {
+        one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+        eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17,
+        eighteen: 18, nineteen: 19, twenty: 20, thirty: 30, forty: 40, fifty: 50
+      };
+
+      let numbers: number[] = [];
+      for (const [word, num] of Object.entries(wordToNum)) {
+        if (challenge.includes(word)) {
+          // Handle compound numbers like "twenty three"
+          if (word === 'twenty' && challenge.includes('twenty') && challenge.match(/twenty\s*(one|two|three|four|five|six|seven|eight|nine)/)) {
+            const match = challenge.match(/twenty\s*(one|two|three|four|five|six|seven|eight|nine)/);
+            if (match) {
+              numbers.push(20 + (wordToNum[match[1]] || 0));
+            }
+          } else if (num <= 9 && challenge.match(new RegExp(`twenty\\s*${word}`))) {
+            // Skip - already handled in compound
+          } else if (num > 9 || !challenge.match(new RegExp(`(twenty|thirty|forty|fifty)\\s*${word}`))) {
+            numbers.push(num);
+          }
+        }
+      }
+
+      const answer = String(numbers.reduce((a, b) => a + b, 0));
+
+      const verifyResponse = await fetch(`${MOLTBOOK_BASE}/verify`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${c.env.MOLTBOOK_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ verification_code: data.verification.code, answer }),
+      });
+
+      const verifyData = await verifyResponse.json() as { success: boolean };
+
+      return c.json({
+        success: verifyData.success,
+        postId: data.post?.id,
+        verified: verifyData.success,
+        answer,
+      });
+    }
+
+    return c.json({
+      success: true,
+      postId: data.post?.id,
+    });
+  } catch (error) {
+    console.error('Moltbook post error:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Trigger Moltbook heartbeat manually (for testing)
+app.post('/api/moltbook/heartbeat', async (c) => {
+  try {
+    const result = await runMoltbookHeartbeat(c.env);
+    return c.json({
+      success: true,
+      ...result,
+    });
+  } catch (error) {
+    console.error('Moltbook heartbeat error:', error);
     return c.json({ success: false, error: String(error) }, 500);
   }
 });
@@ -6593,17 +7418,9 @@ async function handleCron(env: Env, scheduledTime: number): Promise<void> {
   const config = await loadConfig(env);
   console.log('Config loaded for cron run');
 
-  // Every 10 minutes: Generate plans for pending tasks
-  if (minute % 10 === 0) {
-    console.log('Running plan generation cron...');
-    await runPlanGeneration(env);
-  }
-
-  // Every 5 minutes: Execute approved tasks
-  if (minute % 5 === 0) {
-    console.log('Running execution cron...');
-    await runExecution(env);
-  }
+  // Plan generation and task execution disabled — use manual triggers if needed
+  // if (minute % 10 === 0) { await runPlanGeneration(env); }
+  // if (minute % 5 === 0) { await runExecution(env); }
 
   // Daily at 14:00 UTC (9 AM ET / 7 AM MT): Daily "What I Fixed" post
   if (hour === 14 && minute === 0) {
@@ -6875,12 +7692,20 @@ async function handleCron(env: Env, scheduledTime: number): Promise<void> {
     }
   }
 
-  // Every 12 hours (8, 20 UTC): Refresh cast engagement metrics
+  // Every 12 hours (8, 20 UTC): Refresh cast engagement metrics + analyze performance
   if ((hour === 8 || hour === 20) && minute === 0) {
     console.log('Running cast engagement refresh...');
     try {
       const result = await refreshRecentCastEngagement(env, 72);
       console.log('Engagement refresh:', result);
+
+      // Analyze content performance and store lessons
+      const perfReport = await analyzeContentPerformance(env);
+      console.log('Content performance analysis:', perfReport);
+
+      // Record engagement outcomes for recent posts
+      const outcomeCount = await recordPostEngagementOutcomes(env);
+      console.log(`Recorded ${outcomeCount} post engagement outcomes`);
     } catch (error) {
       console.error('Engagement refresh error:', error);
     }
@@ -7015,6 +7840,17 @@ async function handleCron(env: Env, scheduledTime: number): Promise<void> {
     }
   }
 
+  // Every 6 hours (0, 6, 12, 18 UTC): Refresh skill registry from outcome_ledger
+  if ((hour === 0 || hour === 6 || hour === 12 || hour === 18) && minute === 0) {
+    console.log('Running skill registry refresh...');
+    try {
+      const result = await refreshAllSkills(env);
+      console.log('Skill refresh result:', result);
+    } catch (error) {
+      console.error('Skill refresh error:', error);
+    }
+  }
+
   // Every 4 hours (2, 6, 10, 14, 18, 22 UTC): Molty.pics engagement
   // Follow back followers, respond to comments, engage with feed
   if ((hour === 2 || hour === 6 || hour === 10 || hour === 14 || hour === 18 || hour === 22) && minute === 0) {
@@ -7035,6 +7871,75 @@ async function handleCron(env: Env, scheduledTime: number): Promise<void> {
       console.log('Molty.pics feed engagement:', feedResult);
     } catch (error) {
       console.error('Molty.pics engagement error:', error);
+    }
+  }
+
+  // Every 30 minutes: Process pending self-modifications
+  if (minute === 0 || minute === 30) {
+    if (await shouldRunCron(env, 'selfmod')) {
+      console.log('Running self-modification processor...');
+      try {
+        const result = await processSelfModifications(env);
+        console.log('Self-mod result:', result);
+      } catch (error) {
+        console.error('Self-modification error:', error);
+      }
+    }
+  }
+
+  // Daily at 22:00 UTC: Learning cycle
+  if (hour === 22 && minute === 0) {
+    if (await shouldRunCron(env, 'learning')) {
+      console.log('Running daily learning cycle...');
+      try {
+        const report = await runLearningCycle(env);
+        console.log('Learning cycle result:', report.summary);
+      } catch (error) {
+        console.error('Learning cycle error:', error);
+      }
+    }
+  }
+
+  // Moltbook heartbeat - DISABLED (posting incoherent content)
+  // if (minute === 30) {
+  //   const result = await runMoltbookHeartbeat(env);
+  // }
+
+  // Daily at 15:00 UTC (10 AM ET) - Bankr trading session
+  // Engage with @bankr, analyze mentioned tokens, make trade decisions
+  if (hour === 15 && minute === 0) {
+    console.log('Running Bankr trading session...');
+    try {
+      const result = await runBankrTrade(env);
+      console.log('Bankr trading result:', {
+        success: result.success,
+        tokensAnalyzed: result.tokensAnalyzed,
+        decisions: result.decisions,
+        castHash: result.conversationCastHash,
+        error: result.error,
+      });
+
+      // Also track outcomes from previous decisions
+      await trackDecisionOutcomes(env);
+    } catch (error) {
+      console.error('Bankr trading error:', error);
+    }
+  }
+
+  // Daily at 18:00 UTC (1 PM ET) - Molty.pics mood post
+  // Generate an artistic post reflecting Fixr's current state
+  if (hour === 18 && minute === 0) {
+    console.log('Running daily mood post...');
+    try {
+      const result = await runDailyMoodPost(env);
+      console.log('Mood post result:', {
+        success: result.success,
+        postUrl: result.postUrl,
+        mood: result.mood,
+        error: result.error,
+      });
+    } catch (error) {
+      console.error('Mood post error:', error);
     }
   }
 }

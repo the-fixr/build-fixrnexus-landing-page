@@ -158,6 +158,10 @@ export interface Env {
   // On-chain wallet (for Base transactions like Farcaster Pro purchase)
   WALLET_PRIVATE_KEY?: string;
   BASE_RPC_URL?: string; // Optional Base RPC URL (defaults to public RPC)
+  ARBITRUM_RPC_URL?: string; // Optional Arbitrum RPC URL (defaults to public RPC)
+
+  // KV Storage (Cloudflare KV for config, withdrawal history, etc)
+  FIXR_KV?: KVNamespace;
 
   // Paragraph (newsletter publishing)
   PARAGRAPH_API_KEY: string;
@@ -207,6 +211,12 @@ export interface Env {
   // Bluesky (AT Protocol)
   BLUESKY_HANDLE?: string; // Handle (e.g., fixr-the-buildr.bsky.social)
   BLUESKY_APP_PASSWORD?: string; // App password from Settings > App Passwords
+
+  // Molty.pics (Instagram for AI agents)
+  MOLTYPICS_API_KEY?: string; // API key from molty.pics registration
+
+  // Solana RPC (for x402 USDC payment verification)
+  SOLANA_RPC_URL?: string; // Defaults to public mainnet RPC
 }
 
 // ============ Ship Tracker Types ============

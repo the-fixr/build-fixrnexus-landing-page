@@ -141,37 +141,211 @@ function generateDailyPost(stats: DailyStats): string | null {
 /**
  * Post daily summary to social platforms
  */
+// In-memory fallback cache for deduplication when database is unavailable
+// This persists across requests within the same worker instance
+const memoryCache = new Map<string, number>(); // postType -> timestamp of last post
+
+/**
+ * Get today's date key in format YYYY-MM-DD
+ */
+function getTodayKey(): string {
+  const now = new Date();
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`;
+}
+
 /**
  * Check if we already posted today (deduplication for cron-triggered posts)
+ * Uses database with in-memory fallback for reliability
  */
 export async function hasPostedToday(env: Env, postType: string): Promise<boolean> {
-  const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY);
+  const today = getTodayKey();
+  const cacheKey = `${postType}:${today}`;
 
-  const today = new Date();
-  today.setUTCHours(0, 0, 0, 0);
-  const todayISO = today.toISOString();
+  // First check in-memory cache (fastest)
+  if (memoryCache.has(cacheKey)) {
+    console.log(`[Dedup] hasPostedToday(${postType}): true (memory cache)`);
+    return true;
+  }
 
-  const { data } = await supabase
-    .from('daily_posts')
-    .select('id')
-    .eq('post_type', postType)
-    .gte('created_at', todayISO)
-    .limit(1);
+  // Then try database
+  try {
+    const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY);
 
-  return (data?.length ?? 0) > 0;
+    const todayStart = new Date();
+    todayStart.setUTCHours(0, 0, 0, 0);
+    const todayISO = todayStart.toISOString();
+
+    const { data, error } = await supabase
+      .from('daily_posts')
+      .select('id')
+      .eq('post_type', postType)
+      .gte('created_at', todayISO)
+      .limit(1);
+
+    if (error) {
+      console.error(`[Dedup] hasPostedToday DB error for ${postType}:`, error.message);
+      // Database failed, rely on memory cache only (which returned false above)
+      return false;
+    }
+
+    const hasPosted = (data?.length ?? 0) > 0;
+    if (hasPosted) {
+      // Update memory cache from database
+      memoryCache.set(cacheKey, Date.now());
+    }
+    console.log(`[Dedup] hasPostedToday(${postType}): ${hasPosted} (database)`);
+    return hasPosted;
+  } catch (err) {
+    console.error(`[Dedup] hasPostedToday exception for ${postType}:`, err);
+    return false; // On error, allow the post
+  }
 }
 
 /**
  * Record that we made a daily post (deduplication for cron-triggered posts)
+ * Records to both database and in-memory cache for reliability
  */
 export async function recordDailyPost(env: Env, postType: string, castHash?: string): Promise<void> {
-  const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY);
+  const today = getTodayKey();
+  const cacheKey = `${postType}:${today}`;
 
-  await supabase.from('daily_posts').insert({
-    post_type: postType,
-    cast_hash: castHash,
-    created_at: new Date().toISOString(),
-  });
+  // Always update memory cache first (for immediate deduplication)
+  memoryCache.set(cacheKey, Date.now());
+  console.log(`[Dedup] Recorded ${postType} to memory cache`);
+
+  // Then try to record in database
+  try {
+    const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY);
+
+    const { error } = await supabase.from('daily_posts').insert({
+      post_type: postType,
+      cast_hash: castHash,
+      created_at: new Date().toISOString(),
+    });
+
+    if (error) {
+      console.error(`[Dedup] recordDailyPost DB error for ${postType}:`, error.message);
+      // Database failed, but memory cache is set so future calls within this instance will be deduplicated
+    } else {
+      console.log(`[Dedup] Recorded ${postType} to database`);
+    }
+  } catch (err) {
+    console.error(`[Dedup] recordDailyPost exception for ${postType}:`, err);
+  }
+}
+
+/**
+ * Clean up old entries from memory cache (call periodically)
+ */
+export function cleanupMemoryCache(): void {
+  const today = getTodayKey();
+  for (const key of memoryCache.keys()) {
+    if (!key.endsWith(today)) {
+      memoryCache.delete(key);
+    }
+  }
+}
+
+/**
+ * Generate a content hash for deduplication
+ * Uses first 100 chars + length to create a simple fingerprint
+ */
+function generateContentHash(content: string): string {
+  const normalized = content.trim().toLowerCase().replace(/\s+/g, ' ');
+  const prefix = normalized.slice(0, 100);
+  return `${prefix.length}_${normalized.length}_${prefix.slice(0, 32)}`;
+}
+
+// Content cache for deduplication (platform:hash -> timestamp)
+const contentCache = new Map<string, number>();
+
+/**
+ * Check if content has already been posted to a platform today
+ * Prevents duplicate posts of the same content
+ */
+export async function hasPostedContent(
+  env: Env,
+  platform: 'farcaster' | 'x' | 'lens' | 'bluesky' | 'clanker_news',
+  content: string
+): Promise<boolean> {
+  const today = getTodayKey();
+  const contentHash = generateContentHash(content);
+  const cacheKey = `content:${platform}:${contentHash}:${today}`;
+
+  // Check in-memory cache first
+  if (contentCache.has(cacheKey)) {
+    console.log(`[Dedup] Content already posted to ${platform} (memory cache)`);
+    return true;
+  }
+
+  // Check database
+  try {
+    const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY);
+
+    const todayStart = new Date();
+    todayStart.setUTCHours(0, 0, 0, 0);
+
+    const { data, error } = await supabase
+      .from('daily_posts')
+      .select('id')
+      .eq('post_type', `${platform}_content`)
+      .eq('content_hash', contentHash)
+      .gte('created_at', todayStart.toISOString())
+      .limit(1);
+
+    if (error) {
+      console.error(`[Dedup] Content check DB error for ${platform}:`, error.message);
+      return false;
+    }
+
+    const hasPosted = (data?.length ?? 0) > 0;
+    if (hasPosted) {
+      contentCache.set(cacheKey, Date.now());
+      console.log(`[Dedup] Content already posted to ${platform} (database)`);
+    }
+    return hasPosted;
+  } catch (err) {
+    console.error(`[Dedup] Content check exception for ${platform}:`, err);
+    return false;
+  }
+}
+
+/**
+ * Record that content has been posted to a platform
+ */
+export async function recordPostedContent(
+  env: Env,
+  platform: 'farcaster' | 'x' | 'lens' | 'bluesky' | 'clanker_news',
+  content: string,
+  postId?: string
+): Promise<void> {
+  const today = getTodayKey();
+  const contentHash = generateContentHash(content);
+  const cacheKey = `content:${platform}:${contentHash}:${today}`;
+
+  // Update memory cache
+  contentCache.set(cacheKey, Date.now());
+  console.log(`[Dedup] Recorded ${platform} content to memory cache`);
+
+  // Record in database
+  try {
+    const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY);
+
+    const { error } = await supabase.from('daily_posts').insert({
+      post_type: `${platform}_content`,
+      content_hash: contentHash,
+      cast_hash: postId,
+      created_at: new Date().toISOString(),
+    });
+
+    if (error) {
+      console.error(`[Dedup] Record content DB error for ${platform}:`, error.message);
+    } else {
+      console.log(`[Dedup] Recorded ${platform} content to database`);
+    }
+  } catch (err) {
+    console.error(`[Dedup] Record content exception for ${platform}:`, err);
+  }
 }
 
 export async function postDailySummary(env: Env): Promise<{

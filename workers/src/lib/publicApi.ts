@@ -20,6 +20,11 @@ const USDC_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
 const USDC_DECIMALS = 6;
 const PRICE_PER_CALL = 10000; // 0.01 USDC in 6 decimals
 
+// Solana x402 payment constants
+const SOLANA_TREASURY = '96vRDBvjR2FhtzH5WtawLWdLh1dFmZjnY4DEsmjaEvuU';
+const USDC_SOLANA_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+const SOLANA_PUBLIC_RPC = 'https://api.mainnet-beta.solana.com';
+
 // Tier thresholds in FIXR tokens (18 decimals)
 const TIERS = {
   FREE: { minStake: 0n, rateLimit: 10, name: 'FREE' },
@@ -207,6 +212,100 @@ async function verifyX402Payment(
 }
 
 /**
+ * Verify x402 payment on Solana
+ * Checks preTokenBalances vs postTokenBalances for USDC transfer to treasury
+ */
+async function verifySolanaX402Payment(
+  env: Env,
+  txSignature: string
+): Promise<{ valid: boolean; error?: string }> {
+  try {
+    // Check replay
+    if (env.FIXR_KV) {
+      const used = await env.FIXR_KV.get(`x402_sol_tx:${txSignature}`);
+      if (used) {
+        return { valid: false, error: 'Transaction already used' };
+      }
+    }
+
+    const rpcUrl = env.SOLANA_RPC_URL || SOLANA_PUBLIC_RPC;
+
+    const response = await fetch(rpcUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'getTransaction',
+        params: [
+          txSignature,
+          { commitment: 'confirmed', maxSupportedTransactionVersion: 0 },
+        ],
+      }),
+    });
+
+    const result = (await response.json()) as {
+      result?: {
+        meta: {
+          err: unknown;
+          preTokenBalances: Array<{
+            accountIndex: number;
+            mint: string;
+            owner: string;
+            uiTokenAmount: { amount: string; decimals: number };
+          }>;
+          postTokenBalances: Array<{
+            accountIndex: number;
+            mint: string;
+            owner: string;
+            uiTokenAmount: { amount: string; decimals: number };
+          }>;
+        };
+      };
+      error?: { message: string };
+    };
+
+    if (result.error || !result.result) {
+      return { valid: false, error: 'Transaction not found' };
+    }
+
+    const { meta } = result.result;
+
+    if (meta.err !== null) {
+      return { valid: false, error: 'Transaction failed' };
+    }
+
+    // Find treasury's USDC balance change
+    const pre = meta.preTokenBalances.find(
+      (b) => b.owner === SOLANA_TREASURY && b.mint === USDC_SOLANA_MINT
+    );
+    const post = meta.postTokenBalances.find(
+      (b) => b.owner === SOLANA_TREASURY && b.mint === USDC_SOLANA_MINT
+    );
+
+    const preAmount = BigInt(pre?.uiTokenAmount?.amount ?? '0');
+    const postAmount = BigInt(post?.uiTokenAmount?.amount ?? '0');
+    const received = postAmount - preAmount;
+
+    if (received < BigInt(PRICE_PER_CALL)) {
+      return { valid: false, error: 'Insufficient payment amount' };
+    }
+
+    // Mark as used
+    if (env.FIXR_KV) {
+      await env.FIXR_KV.put(`x402_sol_tx:${txSignature}`, Date.now().toString(), {
+        expirationTtl: 60 * 60 * 24 * 30, // 30 days
+      });
+    }
+
+    return { valid: true };
+  } catch (error) {
+    console.error('[PublicAPI] Solana payment verification error:', error);
+    return { valid: false, error: 'Verification failed' };
+  }
+}
+
+/**
  * Public API access middleware
  * Checks wallet staking tier or x402 payment
  */
@@ -216,6 +315,7 @@ export async function publicApiMiddleware(
 ): Promise<Response> {
   const wallet = c.req.header('X-Wallet-Address');
   const paymentTxHash = c.req.header('X-Payment-TxHash');
+  const paymentChain = (c.req.header('X-Payment-Chain') || 'base').toLowerCase();
 
   let accessInfo: AccessInfo = {
     tier: 'FREE',
@@ -227,7 +327,9 @@ export async function publicApiMiddleware(
 
   // Check x402 payment first (bypasses rate limiting)
   if (paymentTxHash) {
-    const verification = await verifyX402Payment(c.env, paymentTxHash);
+    const verification = paymentChain === 'solana'
+      ? await verifySolanaX402Payment(c.env, paymentTxHash)
+      : await verifyX402Payment(c.env, paymentTxHash);
 
     if (verification.valid) {
       accessInfo.paidWithX402 = true;
@@ -241,12 +343,7 @@ export async function publicApiMiddleware(
           success: false,
           error: 'Invalid payment',
           details: verification.error,
-          x402: {
-            pricePerCall: '$0.01 USDC',
-            token: USDC_BASE,
-            recipient: FIXR_TREASURY,
-            amount: PRICE_PER_CALL,
-          },
+          x402: getX402PaymentOptions(),
         },
         402
       );
@@ -278,12 +375,7 @@ export async function publicApiMiddleware(
         limit: `${accessInfo.rateLimit}/min`,
         used: used,
         upgrade: accessInfo.tier !== 'ELITE' ? 'Stake more FIXR or pay with x402' : undefined,
-        x402: {
-          pricePerCall: '$0.01 USDC',
-          token: USDC_BASE,
-          recipient: FIXR_TREASURY,
-          amount: PRICE_PER_CALL,
-        },
+        x402: getX402PaymentOptions(),
       },
       429
     );
@@ -291,6 +383,33 @@ export async function publicApiMiddleware(
 
   c.set('accessInfo', accessInfo);
   return next();
+}
+
+/**
+ * Build x402 payment options object (both Base and Solana)
+ */
+function getX402PaymentOptions() {
+  return {
+    pricePerCall: '$0.01 USDC',
+    amount: PRICE_PER_CALL,
+    chains: {
+      base: {
+        token: USDC_BASE,
+        recipient: FIXR_TREASURY,
+        chainId: 8453,
+      },
+      solana: {
+        mint: USDC_SOLANA_MINT,
+        recipient: SOLANA_TREASURY,
+        network: 'mainnet-beta',
+      },
+    },
+    headers: {
+      payment: 'X-Payment-TxHash',
+      chain: 'X-Payment-Chain (base | solana)',
+      wallet: 'X-Wallet-Address',
+    },
+  };
 }
 
 /**
@@ -338,19 +457,28 @@ export function getPaymentInfo(c: Context<{ Bindings: Env }>): Response {
   return c.json({
     success: true,
     x402: {
-      version: 1,
-      pricePerCall: '$0.01',
+      version: 2,
+      pricePerCall: '$0.01 USDC',
       priceInUnits: PRICE_PER_CALL,
-      token: {
-        address: USDC_BASE,
-        symbol: 'USDC',
-        decimals: USDC_DECIMALS,
-        chain: 'Base',
-        chainId: 8453,
+      chains: {
+        base: {
+          token: USDC_BASE,
+          symbol: 'USDC',
+          decimals: USDC_DECIMALS,
+          chainId: 8453,
+          recipient: FIXR_TREASURY,
+        },
+        solana: {
+          mint: USDC_SOLANA_MINT,
+          symbol: 'USDC',
+          decimals: USDC_DECIMALS,
+          network: 'mainnet-beta',
+          recipient: SOLANA_TREASURY,
+        },
       },
-      recipient: FIXR_TREASURY,
       headers: {
         payment: 'X-Payment-TxHash',
+        chain: 'X-Payment-Chain (base | solana, default: base)',
         wallet: 'X-Wallet-Address',
       },
     },
@@ -374,6 +502,8 @@ export const API_CONFIG = {
   FIXR_STAKING_ADDRESS,
   FIXR_TREASURY,
   USDC_BASE,
+  SOLANA_TREASURY,
+  USDC_SOLANA_MINT,
   PRICE_PER_CALL,
   TIERS,
 };

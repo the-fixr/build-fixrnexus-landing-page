@@ -4,10 +4,13 @@
 
 import { Env } from './types';
 import { generateHashtags, addHashtagsToPost, PLATFORM_CONFIG, generatePlatformPost } from './posting';
-import { trackCast, CastAnalytics } from './castAnalytics';
-import { crosspostToLens } from './lens';
-import { crosspostToBluesky } from './bluesky';
+import { trackCast, CastAnalytics, getPostingContext } from './castAnalytics';
+import { crosspostToLens as lensPost } from './lens';
+import { crosspostToBluesky as blueskyPost } from './bluesky';
 import { loadConfig } from './config';
+import { hasPostedContent, recordPostedContent } from './dailypost';
+import { recordOutcome, classifyError } from './outcomes';
+import { withRetry } from './retry';
 
 export interface PostResult {
   success: boolean;
@@ -81,13 +84,22 @@ async function generateOAuth1Signature(
 export async function postToX(
   env: Env,
   text: string,
-  options?: { skipHashtags?: boolean; customHashtags?: string[] }
+  options?: { skipHashtags?: boolean; customHashtags?: string[]; skipDedup?: boolean }
 ): Promise<PostResult> {
   if (!env.X_ACCESS_TOKEN || !env.X_ACCESS_SECRET || !env.X_API_KEY || !env.X_API_SECRET) {
     return { success: false, error: 'X credentials not configured' };
   }
 
   try {
+    // Check for duplicate content (skip for replies or when explicitly disabled)
+    if (!options?.skipDedup) {
+      const isDuplicate = await hasPostedContent(env, 'x', text);
+      if (isDuplicate) {
+        console.log('[X] Skipping duplicate content');
+        return { success: false, error: 'Duplicate content already posted today' };
+      }
+    }
+
     // Add hashtags if not skipped and not already present
     let postText = text;
     if (!options?.skipHashtags && !text.includes('#')) {
@@ -154,11 +166,29 @@ export async function postToX(
     };
 
     if (!response.ok) {
-      return {
+      const errorMsg = data.detail || data.title || data.errors?.[0]?.message || JSON.stringify(data);
+      recordOutcome(env, {
+        action_type: 'post',
+        skill: 'x_post',
         success: false,
-        error: data.detail || data.title || data.errors?.[0]?.message || JSON.stringify(data),
-      };
+        error_class: classifyError(errorMsg).errorClass,
+        error_message: errorMsg,
+        context: { platform: 'x', textLength: postText.length },
+      }).catch(err => console.error('[Outcomes] X post error recording:', err));
+      return { success: false, error: errorMsg };
     }
+
+    // Record successful post for deduplication
+    await recordPostedContent(env, 'x', text, data.data?.id);
+
+    recordOutcome(env, {
+      action_type: 'post',
+      action_id: data.data?.id,
+      skill: 'x_post',
+      success: true,
+      context: { platform: 'x', textLength: postText.length },
+      outcome: { postId: data.data?.id, url: `https://x.com/Fixr21718/status/${data.data?.id}` },
+    }).catch(err => console.error('[Outcomes] X post success recording:', err));
 
     return {
       success: true,
@@ -166,6 +196,14 @@ export async function postToX(
       url: `https://x.com/Fixr21718/status/${data.data?.id}`,
     };
   } catch (error) {
+    recordOutcome(env, {
+      action_type: 'post',
+      skill: 'x_post',
+      success: false,
+      error_class: classifyError(error).errorClass,
+      error_message: String(error).slice(0, 2000),
+      context: { platform: 'x' },
+    }).catch(err => console.error('[Outcomes] X post exception recording:', err));
     return { success: false, error: String(error) };
   }
 }
@@ -183,13 +221,22 @@ export async function postToFarcaster(
     castType: CastAnalytics['castType'];
     channelId?: string;
     metadata?: CastAnalytics['metadata'];
-  }
+  },
+  options?: { skipDedup?: boolean }
 ): Promise<PostResult> {
   if (!env.NEYNAR_API_KEY || !env.FARCASTER_SIGNER_UUID) {
     return { success: false, error: `Farcaster credentials not configured` };
   }
 
   try {
+    // Check for duplicate content (skip for replies or when explicitly disabled)
+    if (!replyTo && !options?.skipDedup) {
+      const isDuplicate = await hasPostedContent(env, 'farcaster', text);
+      if (isDuplicate) {
+        console.log('[Farcaster] Skipping duplicate content');
+        return { success: false, error: 'Duplicate content already posted today' };
+      }
+    }
     const bodyData: { signer_uuid: string; text: string; embeds?: { url: string }[]; parent?: string } = {
       signer_uuid: env.FARCASTER_SIGNER_UUID,
       text,
@@ -203,30 +250,50 @@ export async function postToFarcaster(
       bodyData.parent = replyTo;
     }
 
-    const response = await fetch('https://api.neynar.com/v2/farcaster/cast', {
-      method: 'POST',
-      headers: {
-        'x-api-key': env.NEYNAR_API_KEY,
-        'Content-Type': 'application/json',
+    const { result: castResponse, retryCount } = await withRetry(
+      async () => {
+        const r = await fetch('https://api.neynar.com/v2/farcaster/cast', {
+          method: 'POST',
+          headers: {
+            'x-api-key': env.NEYNAR_API_KEY,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(bodyData),
+        });
+        const d = await r.json() as {
+          cast?: { hash?: string; thread_hash?: string };
+          message?: string;
+          error?: string;
+        };
+        if (!r.ok) {
+          throw new Error(`${r.status}: ${d.message || d.error || JSON.stringify(d)}`);
+        }
+        return d;
       },
-      body: JSON.stringify(bodyData),
-    });
+      { maxRetries: 2, baseDelay: 2000 }
+    );
 
-    const data = await response.json() as {
-      cast?: { hash?: string; thread_hash?: string };
-      message?: string;
-      error?: string;
-    };
-
-    if (!response.ok) {
-      return {
+    if (!castResponse) {
+      recordOutcome(env, {
+        action_type: 'post',
+        skill: 'farcaster_post',
         success: false,
-        error: `${response.status}: ${data.message || data.error || JSON.stringify(data)}`,
-      };
+        error_class: 'external_service',
+        error_message: 'Neynar API failed after retries',
+        context: { platform: 'farcaster', isReply: !!replyTo, textLength: text.length, retryCount },
+      }).catch(err => console.error('[Outcomes] FC post error recording:', err));
+      return { success: false, error: 'Neynar API failed after retries' };
     }
+
+    const data = castResponse;
 
     const cast = data.cast;
     const hash = cast?.hash;
+
+    // Record successful post for deduplication
+    if (hash && !replyTo) {
+      await recordPostedContent(env, 'farcaster', text, hash);
+    }
 
     // Track cast analytics if type provided
     if (hash && analytics?.castType) {
@@ -237,43 +304,77 @@ export async function postToFarcaster(
       }).catch(err => console.error('Cast tracking error:', err));
     }
 
-    // Crosspost to other platforms (don't block on failure, just log)
+    // Crosspost to other platforms — awaited so CF Worker doesn't kill promises
     // Skip replies - only crosspost original posts
     if (!replyTo) {
-      loadConfig(env).then(config => {
+      try {
+        const config = await loadConfig(env);
         const imageUrl = embeds?.[0]?.url;
+        const crosspostPromises: Promise<void>[] = [];
 
-        // Crosspost to Lens
+        // Crosspost to Lens with deduplication
         if (config.lens_crosspost_enabled) {
-          crosspostToLens(env, text, imageUrl)
-            .then(lensResult => {
+          crosspostPromises.push((async () => {
+            try {
+              const isLensDuplicate = await hasPostedContent(env, 'lens', text);
+              if (isLensDuplicate) {
+                console.log('[Lens] Skipping duplicate crosspost');
+                return;
+              }
+              const lensResult = await lensPost(env, text, imageUrl);
               if (lensResult.success) {
+                await recordPostedContent(env, 'lens', text, lensResult.postId);
                 console.log('Crossposted to Lens:', lensResult.postId);
               } else {
                 console.log('Lens crosspost failed (non-blocking):', lensResult.error);
               }
-            })
-            .catch(err => console.error('Lens crosspost error:', err));
+            } catch (err) {
+              console.error('Lens crosspost error:', err);
+            }
+          })());
         } else {
           console.log('Lens crossposting disabled in config');
         }
 
-        // Crosspost to Bluesky
+        // Crosspost to Bluesky with deduplication
         if (config.bluesky_crosspost_enabled) {
-          crosspostToBluesky(env, text, imageUrl)
-            .then(bskyResult => {
+          crosspostPromises.push((async () => {
+            try {
+              const isBskyDuplicate = await hasPostedContent(env, 'bluesky', text);
+              if (isBskyDuplicate) {
+                console.log('[Bluesky] Skipping duplicate crosspost');
+                return;
+              }
+              const bskyResult = await blueskyPost(env, text, imageUrl);
               if (bskyResult.success) {
+                await recordPostedContent(env, 'bluesky', text, bskyResult.postId);
                 console.log('Crossposted to Bluesky:', bskyResult.url);
               } else {
                 console.log('Bluesky crosspost failed (non-blocking):', bskyResult.error);
               }
-            })
-            .catch(err => console.error('Bluesky crosspost error:', err));
+            } catch (err) {
+              console.error('Bluesky crosspost error:', err);
+            }
+          })());
         } else {
           console.log('Bluesky crossposting disabled in config');
         }
-      }).catch(err => console.error('Config load error for crossposting:', err));
+
+        // Wait for all crossposts to settle (errors caught individually above)
+        await Promise.allSettled(crosspostPromises);
+      } catch (err) {
+        console.error('Config load error for crossposting:', err);
+      }
     }
+
+    recordOutcome(env, {
+      action_type: 'post',
+      action_id: hash,
+      skill: 'farcaster_post',
+      success: true,
+      context: { platform: 'farcaster', isReply: !!replyTo, textLength: text.length, hasEmbeds: !!embeds?.length },
+      outcome: { postId: hash, url: hash ? `https://farcaster.xyz/fixr/${hash.slice(0, 10)}` : undefined },
+    }).catch(err => console.error('[Outcomes] FC post success recording:', err));
 
     return {
       success: true,
@@ -282,6 +383,14 @@ export async function postToFarcaster(
       ...(cast?.thread_hash && { threadHash: cast.thread_hash }),
     };
   } catch (error) {
+    recordOutcome(env, {
+      action_type: 'post',
+      skill: 'farcaster_post',
+      success: false,
+      error_class: classifyError(error).errorClass,
+      error_message: String(error).slice(0, 2000),
+      context: { platform: 'farcaster', isReply: !!replyTo },
+    }).catch(err => console.error('[Outcomes] FC post exception recording:', err));
     return { success: false, error: String(error) };
   }
 }
@@ -464,6 +573,14 @@ export async function generateConversationalPost(
   const charLimit = platform === 'x' ? 240 : PLATFORM_CONFIG.farcaster.charLimit;
   const maxTokens = platform === 'x' ? 300 : 2000;
 
+  // Get engagement performance context
+  let performanceContext = '';
+  try {
+    performanceContext = await getPostingContext(env, 30);
+  } catch (err) {
+    console.error('[Social] Error getting posting context:', err);
+  }
+
   // Build context about what was accomplished
   const urls = {
     repo: outputs.find((o) => o.type === 'repo')?.url,
@@ -499,7 +616,8 @@ YOUR VOICE:
 PLATFORM GUIDANCE:
 ${platformGuidance}
 
-Write ONE post. No quotes, no markdown, just the raw post text. Include relevant URLs naturally in the text.`;
+Write ONE post. No quotes, no markdown, just the raw post text. Include relevant URLs naturally in the text.
+${performanceContext}`;
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {

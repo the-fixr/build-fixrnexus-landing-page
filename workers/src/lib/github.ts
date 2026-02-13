@@ -3,6 +3,7 @@
 
 import { Octokit } from 'octokit';
 import { Env } from './types';
+import { recordOutcome, classifyError } from './outcomes';
 
 export interface RepoFile {
   path: string;
@@ -184,11 +185,29 @@ export async function pushFiles(
       sha: newCommit.sha,
     });
 
+    recordOutcome(env, {
+      action_type: 'pr',
+      skill: 'github_push',
+      success: true,
+      context: { owner, repo, branch, filesCount: files.length },
+      outcome: { commitSha: newCommit.sha, commitUrl: `https://github.com/${owner}/${repo}/commit/${newCommit.sha}` },
+    }).catch(err => console.error('[Outcomes] GitHub push success recording:', err));
+
     return {
       success: true,
       commitUrl: `https://github.com/${owner}/${repo}/commit/${newCommit.sha}`,
     };
   } catch (error) {
+    const errClass = classifyError(error);
+    recordOutcome(env, {
+      action_type: 'pr',
+      skill: 'github_push',
+      success: false,
+      error_class: errClass.errorClass,
+      error_message: errClass.errorMessage.slice(0, 2000),
+      context: { owner, repo, branch, filesCount: files.length },
+    }).catch(err => console.error('[Outcomes] GitHub push failure recording:', err));
+
     return {
       success: false,
       error: error instanceof Error ? error.message : String(error),
@@ -1168,4 +1187,39 @@ export async function checkAllTrackedPRs(env: Env): Promise<{
   }
 
   return results;
+}
+
+/**
+ * Create a GitHub issue
+ */
+export async function createIssue(
+  env: Env,
+  owner: string,
+  repo: string,
+  title: string,
+  body: string,
+  labels?: string[]
+): Promise<{ success: boolean; issueUrl?: string; issueNumber?: number; error?: string }> {
+  try {
+    const octokit = getOctokit(env);
+
+    const { data } = await octokit.rest.issues.create({
+      owner,
+      repo,
+      title,
+      body,
+      labels,
+    });
+
+    return {
+      success: true,
+      issueUrl: data.html_url,
+      issueNumber: data.number,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
 }

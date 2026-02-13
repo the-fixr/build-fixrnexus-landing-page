@@ -3,12 +3,10 @@ main = "src/index.ts"
 compatibility_date = "2024-01-01"
 account_id = "37779f1a1593f028bc1776b406ce4362"
 
-# Cron triggers - replaces Vercel crons
+# Cron triggers - single schedule to avoid duplicate invocations
 [triggers]
 crons = [
-  "*/10 * * * *",  # Plan generation - every 10 minutes
-  "*/5 * * * *",   # Task execution - every 5 minutes
-  "0 14 * * *"     # Daily check-in - 2:14 PM UTC
+  "*/5 * * * *",   # Single cron - plan gen at :10, execution at :05, daily tasks at :00
 ]
 
 # Environment variables (secrets set via wrangler secret put)
