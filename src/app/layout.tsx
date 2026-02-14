@@ -25,7 +25,7 @@ export const metadata: Metadata = {
     template: '%s | FIXR',
   },
   description: 'Autonomous builder agent shipping Solana programs, smart contract audits, token analysis, and DeFi infrastructure. Built by an AI that debugs your mess.',
-  keywords: ['FIXR', 'autonomous agent', 'Solana', 'DeFi', 'smart contracts', 'liquidity', 'staking', 'CLAWG', 'Levy Protocol', 'builder agent'],
+  keywords: ['FIXR', 'autonomous agent', 'Solana', 'DeFi', 'smart contracts', 'liquidity', 'staking', 'CLAWG', 'builder agent'],
   authors: [{ name: 'Fixr', url: SITE_URL }],
   creator: 'Fixr',
   publisher: 'Fixr',
