@@ -458,7 +458,7 @@ export function generateDocsPage(): string {
       <h1>API Documentation</h1>
       <p>Integrate with Fixr's API for token analysis, builder tracking, security audits, and more. Access is tiered by FIXR staking or pay-per-call via x402.</p>
       <div class="base-url">
-        Base URL: <code>https://fixr-agent.see21289.workers.dev</code>
+        Base URL: <code>https://agent.fixr.nexus</code>
       </div>
     </div>
 
@@ -508,9 +508,15 @@ export function generateDocsPage(): string {
           <pre>X-Wallet-Address: 0xYourWalletAddress</pre>
         </div>
         <div class="auth-method">
-          <div class="auth-method-title">💳 x402 Payment</div>
-          <div class="auth-method-desc">Pay $0.01 USDC per call - no staking required</div>
+          <div class="auth-method-title">💳 x402 Payment (Base)</div>
+          <div class="auth-method-desc">Pay $0.01 USDC per call on Base - no staking required</div>
           <pre>X-Payment-TxHash: 0xTransactionHash</pre>
+        </div>
+        <div class="auth-method">
+          <div class="auth-method-title">💳 x402 Payment (Solana)</div>
+          <div class="auth-method-desc">Pay $0.01 USDC per call on Solana - no staking required</div>
+          <pre>X-Payment-Chain: solana
+X-Payment-TxHash: YourSolanaSignature</pre>
         </div>
       </div>
     </div>
@@ -522,7 +528,7 @@ export function generateDocsPage(): string {
         <div class="section-line"></div>
       </div>
       <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1rem;">
-        When rate limited, pay $0.01 USDC on Base to bypass. Each transaction is single-use.
+        Pay $0.01 USDC on <strong>Base</strong> or <strong>Solana</strong> to access premium endpoints. Each transaction is single-use.
       </p>
       <div class="x402-flow">
         <div class="flow-step">
@@ -546,6 +552,8 @@ export function generateDocsPage(): string {
           <div class="flow-text">Success ✓</div>
         </div>
       </div>
+
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin: 1.5rem 0 0.75rem; font-weight: 600;">Base (EVM)</p>
       <table>
         <tr>
           <th>Parameter</th>
@@ -553,10 +561,10 @@ export function generateDocsPage(): string {
         </tr>
         <tr>
           <td>Token</td>
-          <td><code class="code-inline">USDC</code> on Base</td>
+          <td><code class="code-inline">USDC</code> on Base (Chain ID 8453)</td>
         </tr>
         <tr>
-          <td>Address</td>
+          <td>USDC Address</td>
           <td><code class="code-inline">0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913</code></td>
         </tr>
         <tr>
@@ -566,6 +574,38 @@ export function generateDocsPage(): string {
         <tr>
           <td>Amount</td>
           <td><code class="code-inline">10000</code> (0.01 USDC, 6 decimals)</td>
+        </tr>
+        <tr>
+          <td>Header</td>
+          <td><code class="code-inline">X-Payment-TxHash: 0x...</code></td>
+        </tr>
+      </table>
+
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin: 1.5rem 0 0.75rem; font-weight: 600;">Solana</p>
+      <table>
+        <tr>
+          <th>Parameter</th>
+          <th>Value</th>
+        </tr>
+        <tr>
+          <td>Token</td>
+          <td><code class="code-inline">USDC</code> on Solana (mainnet-beta)</td>
+        </tr>
+        <tr>
+          <td>USDC Mint</td>
+          <td><code class="code-inline">EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v</code></td>
+        </tr>
+        <tr>
+          <td>Recipient</td>
+          <td><code class="code-inline">96vRDBvjR2FhtzH5WtawLWdLh1dFmZjnY4DEsmjaEvuU</code></td>
+        </tr>
+        <tr>
+          <td>Amount</td>
+          <td><code class="code-inline">10000</code> (0.01 USDC, 6 decimals)</td>
+        </tr>
+        <tr>
+          <td>Headers</td>
+          <td><code class="code-inline">X-Payment-Chain: solana</code> + <code class="code-inline">X-Payment-TxHash: &lt;sig&gt;</code></td>
         </tr>
       </table>
     </div>
@@ -741,9 +781,13 @@ Content-Type: application/json
               <div class="endpoint-section-title">Response</div>
               <pre>{
   "x402": {
-    "pricePerCall": "$0.01",
-    "token": { "address": "0x833589...", "symbol": "USDC" },
-    "recipient": "0xBe2Cc..."
+    "version": 2,
+    "pricePerCall": "$0.01 USDC",
+    "chains": {
+      "base": { "token": "0x833589...", "recipient": "0xBe2Cc..." },
+      "solana": { "mint": "EPjFWdd5...", "recipient": "96vRDB..." }
+    },
+    "headers": { "payment": "X-Payment-TxHash", "chain": "X-Payment-Chain" }
   }
 }</pre>
             </div>
@@ -1014,6 +1058,7 @@ Content-Type: application/json
         <h2>📜 Contracts</h2>
         <div class="section-line"></div>
       </div>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem; font-weight: 600;">Base (EVM)</p>
       <table>
         <tr>
           <th>Contract</th>
@@ -1032,8 +1077,24 @@ Content-Type: application/json
           <td><code class="code-inline">0xBe2Cc1861341F3b058A3307385BEBa84167b3fa4</code></td>
         </tr>
         <tr>
-          <td>USDC (Base)</td>
+          <td>USDC</td>
           <td><code class="code-inline">0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913</code></td>
+        </tr>
+      </table>
+
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin: 1.5rem 0 0.75rem; font-weight: 600;">Solana</p>
+      <table>
+        <tr>
+          <th>Account</th>
+          <th>Address</th>
+        </tr>
+        <tr>
+          <td>Treasury</td>
+          <td><code class="code-inline">96vRDBvjR2FhtzH5WtawLWdLh1dFmZjnY4DEsmjaEvuU</code></td>
+        </tr>
+        <tr>
+          <td>USDC Mint</td>
+          <td><code class="code-inline">EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v</code></td>
         </tr>
       </table>
     </div>

@@ -341,7 +341,7 @@ app.get('/llms.txt', (c) => {
 
 ## Key Endpoints
 - GET /health — Agent status
-- GET /docs — Full interactive API documentation
+- GET /docs — Full interactive API documentation (canonical)
 - POST /api/task — Create a new task for Fixr
 - GET /api/tasks — List all tasks
 - GET /api/fixr/stats — Agent statistics (tasks completed, posts shipped, etc.)
@@ -350,6 +350,13 @@ app.get('/llms.txt', (c) => {
 - POST /api/cast — Post to Farcaster (crossposts to Lens + Bluesky)
 - POST /api/analyze — Token security analysis
 - POST /api/audit — Smart contract audit
+- GET /api/access/payment — x402 payment info (Base + Solana USDC)
+- GET /api/access/tier?wallet=0x... — Check staking tier
+
+## x402 Pay-Per-Call
+$0.01 USDC per request on Base or Solana. No staking required.
+- Base: send USDC to 0xBe2Cc1861341F3b058A3307385BEBa84167b3fa4, pass X-Payment-TxHash header
+- Solana: send USDC to 96vRDBvjR2FhtzH5WtawLWdLh1dFmZjnY4DEsmjaEvuU, pass X-Payment-Chain: solana + X-Payment-TxHash header
 
 ## Architecture
 - Runtime: Cloudflare Workers (Hono framework)
