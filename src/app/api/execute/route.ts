@@ -6,7 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 import { Task } from '@/lib/types';
 
 export const runtime = 'nodejs';
-export const maxDuration = 800;
+export const maxDuration = 300;
 
 function verifyCronSecret(request: Request): boolean {
   const authHeader = request.headers.get('authorization');
