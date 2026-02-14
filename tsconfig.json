@@ -17,6 +17,6 @@
     "paths": { "@/*": ["./src/*"] },
     "baseUrl": "."
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules", "workers", "fixr-mini-app", "xmtp-agent", "contracts"]
+  "include": ["next-env.d.ts", "src/**/*.ts", "src/**/*.tsx", "app/**/*.ts", "app/**/*.tsx", "tailwind.config.ts", ".next/types/**/*.ts"],
+  "exclude": ["node_modules", "workers", "fixr-mini-app", "xmtp-agent", "contracts", "fixr-admin"]
 }
