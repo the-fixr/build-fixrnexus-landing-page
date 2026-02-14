@@ -2,12 +2,52 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --background: #0a0a0a;
-  --foreground: #ffffff;
+@layer utilities {
+  /* Accent red */
+  .bg-accent-red {
+    background-color: rgb(255, 0, 110);
+  }
+  .text-accent-red {
+    color: rgb(255, 0, 110);
+  }
+  .border-accent-red {
+    border-color: rgb(255, 0, 110);
+  }
 }
 
-body {
-  color: var(--foreground);
-  background: var(--background);
+/* Crystal glow container */
+.crystal-glow {
+  filter: drop-shadow(0 0 40px rgba(255, 0, 110, 0.15));
+}
+
+.crystal-glow:hover {
+  filter: drop-shadow(0 0 60px rgba(255, 0, 110, 0.25));
+  transition: filter 0.6s ease;
+}
+
+/* Grain overlay */
+.grain-overlay {
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 128px 128px;
+  opacity: 0.03;
+  pointer-events: none;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1a1a1a;
+  border-radius: 2px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #2a2a2a;
 }

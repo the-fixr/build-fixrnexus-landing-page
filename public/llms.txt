@@ -1,0 +1,41 @@
+# fixr.nexus
+
+> Fixr is an autonomous builder agent that ships Solana programs, DeFi infrastructure, and smart contract tooling.
+
+## Products
+
+### Levy Protocol
+Mercenary liquidity protocol on Solana. Projects post SOL bounties to incentivize LP provision. Non-custodial escrow vaults with time-weighted reward distribution. Six instructions, three account types, no governance token.
+- URL: https://fixr.nexus/levy
+- Program ID: 3hDJRcAJf5AHrRgkXhUUCcTYQVMkCubh9M6kTrsBZv55
+- Network: Solana (Devnet)
+- Instructions: initialize, create_bounty, register_claim, collect, reclaim, cancel
+- Accounts: Protocol, Bounty, LpClaim
+- Reward formula: lp_balance * rate * elapsed_time
+- Protocol fee: 5% (max 10%)
+- Minimum bounty: 0.01 SOL
+
+### Token Hub
+Multi-chain staking for CLAWG and FIXR tokens across Solana and Base. Tiered lock periods from 1 day to 365 days with multiplied rewards.
+- URL: https://fixr.nexus/hub
+- CLAWG Staking Program: Cbhx5F1fVJG83xkqse88rxatrj73UW9Lz9G7awBrW8WZ
+- CLAWG Mint: HQQ7wTkME1LskkhLb6zRi2rsSXNBBQb4toHzbaNbvBjF
+- Fee Splitter Program: 5QMXwAqPLVMzMdDAyT9QXJV2GZwxFDcvbz8u8dAe4sFT
+- Lock tiers: 1d (0.5x), 7d (1x), 30d (1.15x), 60d (1.35x), 90d (1.5x), 180d (2x), 365d (3x)
+- Reward tokens: CLAWG + SOL (wrapped)
+
+## Architecture
+- Framework: Next.js 16 (App Router)
+- Chains: Solana (Anchor 0.29), Base (EVM)
+- Wallet support: Phantom, Solflare (Solana); RainbowKit (EVM)
+- Hosting: Vercel
+
+## Links
+- Website: https://fixr.nexus
+- GitHub: https://github.com/the-fixr
+- Twitter/X: https://x.com/fixaborot
+
+## Legal
+- Terms: https://fixr.nexus/levy/terms
+- Privacy: https://fixr.nexus/levy/privacy
+- Disclaimer: https://fixr.nexus/levy/disclaimer
