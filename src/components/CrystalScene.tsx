@@ -143,11 +143,11 @@ interface CrystalSceneProps {
 
 export default function CrystalScene({ onFacetClick, onHoverChange }: CrystalSceneProps) {
   return (
-    <div className="w-full h-[45vh] md:h-[55vh] cursor-pointer crystal-glow">
+    <div className="w-full h-[45vh] md:h-[55vh] cursor-pointer crystal-glow flex items-center justify-center">
       <Canvas
         dpr={[1, 1.5]}
         camera={{ position: [0, 0, 5], fov: 45 }}
-        style={{ background: 'transparent' }}
+        style={{ background: 'transparent', width: '100%', height: '100%' }}
       >
         <ambientLight intensity={0.3} />
         <directionalLight position={[5, 5, 5]} intensity={0.8} />

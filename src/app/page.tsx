@@ -139,7 +139,7 @@ export default function FixrLanding() {
 
         {/* Crystal */}
         <motion.div
-          className="w-full max-w-2xl"
+          className="w-full max-w-2xl mx-auto"
           initial={{ opacity: 0, scale: 0.8 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 1.2, delay: 0.3, type: 'spring', damping: 20 }}
