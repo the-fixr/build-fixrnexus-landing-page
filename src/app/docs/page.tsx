@@ -21,6 +21,7 @@ import {
   Check,
   ExternalLink,
 } from 'lucide-react';
+import CamoBackground from '@/components/CamoBackground';
 
 /* ── types ─────────────────────────────────────────────────────────── */
 
@@ -161,7 +162,7 @@ function MethodBadge({ method }: { method: string }) {
     DELETE: 'bg-red-500/10 text-red-400 border-red-500/20',
   };
   return (
-    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${colors[method] || 'bg-gray-500/10 text-gray-400 border-gray-500/20'}`}>
+    <span className={`text-[10px] font-bold font-mono px-1.5 py-0.5 rounded border ${colors[method] || 'bg-gray-500/10 text-gray-400 border-gray-500/20'}`}>
       {method}
     </span>
   );
@@ -188,7 +189,7 @@ function EndpointRow({ ep }: { ep: Endpoint }) {
       <MethodBadge method={ep.method} />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <code className="text-[12px] text-gray-200 break-all">{ep.path}</code>
+          <code className="text-[12px] text-gray-200 break-all font-mono">{ep.path}</code>
           <CopyButton text={fullUrl} />
           {ep.auth === 'x402' && (
             <span className="text-[9px] px-1.5 py-0.5 rounded bg-accent-red/10 text-accent-red border border-accent-red/20">
@@ -206,10 +207,10 @@ function SectionBlock({ section }: { section: Section }) {
   const [open, setOpen] = useState(false);
   const Icon = section.icon;
   return (
-    <div className="border border-[#1a1a1a] rounded-xl overflow-hidden">
+    <div className="border border-white/[0.06] rounded-xl overflow-hidden bg-black/70 backdrop-blur-md shadow-lg shadow-black/20">
       <button
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center gap-3 p-4 hover:bg-white/[0.02] transition-colors text-left"
+        className="w-full flex items-center gap-3 p-4 hover:bg-white/[0.03] transition-colors text-left"
       >
         <Icon className="w-4 h-4 text-accent-red shrink-0" />
         <div className="flex-1">
@@ -224,7 +225,7 @@ function SectionBlock({ section }: { section: Section }) {
         )}
       </button>
       {open && (
-        <div className="border-t border-[#1a1a1a] px-2 py-1 bg-[#080808]">
+        <div className="border-t border-white/[0.06] px-2 py-1 bg-black/50">
           {section.endpoints.map((ep) => (
             <EndpointRow key={`${ep.method}-${ep.path}`} ep={ep} />
           ))}
@@ -238,15 +239,27 @@ function SectionBlock({ section }: { section: Section }) {
 
 export default function DocsPage() {
   return (
-    <div className="min-h-screen bg-[#050505] text-white font-mono">
+    <div className="min-h-screen text-white font-rajdhani relative">
+      <CamoBackground />
+
+      {/* PFP Watermark */}
+      <div className="fixed inset-0 z-[1] flex items-center justify-center pointer-events-none">
+        <img
+          src="/fixrpfp.png"
+          alt=""
+          className="w-[300px] h-[300px] md:w-[400px] md:h-[400px] rounded-full opacity-[0.04]"
+        />
+      </div>
+
       {/* Header */}
-      <header className="sticky top-0 z-30 bg-[#050505]/80 backdrop-blur-md border-b border-[#1a1a1a]">
+      <header className="sticky top-0 z-30 bg-black/60 backdrop-blur-md border-b border-white/[0.06]">
         <div className="max-w-3xl mx-auto px-6 py-4 flex items-center justify-between">
           <Link
             href="/"
             className="flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/fixrpfp.png" alt="Fixr" className="w-5 h-5 rounded-full" />
             FIXR
           </Link>
@@ -262,7 +275,7 @@ export default function DocsPage() {
         </div>
       </header>
 
-      <main className="max-w-3xl mx-auto px-6 py-12">
+      <main className="relative z-10 max-w-3xl mx-auto px-6 py-12">
         {/* Title */}
         <motion.div
           initial={{ opacity: 0, y: 12 }}
@@ -272,7 +285,7 @@ export default function DocsPage() {
           <h1 className="text-3xl font-bold tracking-tight mb-2">API Reference</h1>
           <p className="text-sm text-gray-400 mb-2">
             Base URL:{' '}
-            <code className="text-accent-red bg-accent-red/5 px-1.5 py-0.5 rounded">{BASE_URL}</code>
+            <code className="text-accent-red bg-accent-red/5 px-1.5 py-0.5 rounded font-mono">{BASE_URL}</code>
           </p>
           <p className="text-xs text-gray-500 leading-relaxed max-w-xl">
             120+ endpoints for token analysis, security audits, builder reputation, AI generation, and more.
@@ -292,16 +305,16 @@ export default function DocsPage() {
             Authentication & Payments
           </h2>
 
-          <div className="border border-[#1a1a1a] rounded-xl p-5 bg-[#0a0a0a] space-y-5">
+          <div className="border border-white/[0.06] rounded-xl p-5 bg-black/70 backdrop-blur-md shadow-lg shadow-black/20 space-y-5">
             {/* x402 */}
             <div>
               <h3 className="text-sm font-semibold text-accent-red mb-2">x402 Micropayments</h3>
               <p className="text-xs text-gray-400 leading-relaxed mb-3">
                 Non-stakers can access protected endpoints by paying <strong className="text-white">$0.01 USDC per request</strong> via
-                the x402 protocol. Protected endpoints return <code className="text-accent-red">402 Payment Required</code> with
+                the x402 protocol. Protected endpoints return <code className="text-accent-red font-mono">402 Payment Required</code> with
                 payment instructions. Send USDC on Base and include the tx hash.
               </p>
-              <div className="bg-[#050505] rounded-lg p-3 border border-[#1a1a1a]">
+              <div className="bg-[#0a0a0a] rounded-lg p-3 border border-white/[0.06] font-mono">
                 <div className="flex items-center justify-between mb-1.5">
                   <span className="text-[10px] uppercase tracking-wider text-gray-600">Request</span>
                   <CopyButton text={`curl -X POST ${BASE_URL}/api/v1/token/analyze \\\n  -H "X-Payment-TxHash: 0x..." \\\n  -H "Content-Type: application/json" \\\n  -d '{"address": "0x..."}'`} />
@@ -320,9 +333,9 @@ export default function DocsPage() {
               <h3 className="text-sm font-semibold text-accent-red mb-2">FIXR Staking Tiers</h3>
               <p className="text-xs text-gray-400 leading-relaxed mb-3">
                 Stake FIXR tokens on Base to unlock tiered API access. Pass your wallet address
-                in the <code className="text-accent-red">X-Wallet-Address</code> header for automatic tier detection.
+                in the <code className="text-accent-red font-mono">X-Wallet-Address</code> header for automatic tier detection.
               </p>
-              <div className="bg-[#050505] rounded-lg p-3 border border-[#1a1a1a] mb-3">
+              <div className="bg-[#0a0a0a] rounded-lg p-3 border border-white/[0.06] mb-3 font-mono">
                 <div className="flex items-center justify-between mb-1.5">
                   <span className="text-[10px] uppercase tracking-wider text-gray-600">Request</span>
                   <CopyButton text={`curl ${BASE_URL}/api/v1/builders/top \\\n  -H "X-Wallet-Address: 0xYourWallet"`} />
@@ -334,7 +347,7 @@ export default function DocsPage() {
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                 {TIERS.map((tier) => (
-                  <div key={tier.name} className="bg-[#050505] border border-[#1a1a1a] rounded-lg p-3 text-center">
+                  <div key={tier.name} className="bg-black/50 border border-white/[0.06] rounded-lg p-3 text-center">
                     <div className="text-xs font-bold text-accent-red mb-1">{tier.name}</div>
                     <div className="text-[10px] text-gray-400 mb-1">{tier.stake}</div>
                     <div className="text-[10px] text-gray-600">{tier.rate}</div>
@@ -350,7 +363,7 @@ export default function DocsPage() {
                 <div className="flex items-center justify-between">
                   <span className="text-gray-500">FIXR Token</span>
                   <div className="flex items-center gap-1">
-                    <code className="text-gray-300">0x8cBb...1610</code>
+                    <code className="text-gray-300 font-mono">0x8cBb...1610</code>
                     <a href="https://basescan.org/address/0x8cBb89d67fDA00E26aEd0Fc02718821049b41610" target="_blank" rel="noopener noreferrer" className="text-gray-600 hover:text-accent-red transition-colors">
                       <ExternalLink className="w-3 h-3" />
                     </a>
@@ -359,7 +372,7 @@ export default function DocsPage() {
                 <div className="flex items-center justify-between">
                   <span className="text-gray-500">Staking</span>
                   <div className="flex items-center gap-1">
-                    <code className="text-gray-300">0x39Db...3F5b</code>
+                    <code className="text-gray-300 font-mono">0x39Db...3F5b</code>
                     <a href="https://basescan.org/address/0x39DbBa2CdAF7F668816957B023cbee1841373F5b" target="_blank" rel="noopener noreferrer" className="text-gray-600 hover:text-accent-red transition-colors">
                       <ExternalLink className="w-3 h-3" />
                     </a>
@@ -368,7 +381,7 @@ export default function DocsPage() {
                 <div className="flex items-center justify-between">
                   <span className="text-gray-500">Fee Splitter</span>
                   <div className="flex items-center gap-1">
-                    <code className="text-gray-300">0x5bE1...c928</code>
+                    <code className="text-gray-300 font-mono">0x5bE1...c928</code>
                     <a href="https://basescan.org/address/0x5bE1B904ce0Efbb2CC963aFd6E976f8F93AdC928" target="_blank" rel="noopener noreferrer" className="text-gray-600 hover:text-accent-red transition-colors">
                       <ExternalLink className="w-3 h-3" />
                     </a>
@@ -377,7 +390,7 @@ export default function DocsPage() {
                 <div className="flex items-center justify-between">
                   <span className="text-gray-500">Builder ID NFT</span>
                   <div className="flex items-center gap-1">
-                    <code className="text-gray-300">0x15ce...dcec</code>
+                    <code className="text-gray-300 font-mono">0x15ce...dcec</code>
                     <a href="https://basescan.org/address/0x15ced288ada7d9e8a03fd8af0e5c475f4b60dcec" target="_blank" rel="noopener noreferrer" className="text-gray-600 hover:text-accent-red transition-colors">
                       <ExternalLink className="w-3 h-3" />
                     </a>
@@ -395,7 +408,7 @@ export default function DocsPage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.15 }}
         >
-          <div className="border border-[#1a1a1a] rounded-xl p-4 bg-[#0a0a0a]">
+          <div className="border border-white/[0.06] rounded-xl p-4 bg-black/70 backdrop-blur-md shadow-lg shadow-black/20">
             <h3 className="text-xs font-semibold text-gray-300 mb-2">Supported Networks</h3>
             <p className="text-[11px] text-gray-500 leading-relaxed">
               <strong className="text-gray-400">Token data:</strong> eth, base, solana, arbitrum, optimism, polygon, avax, bsc, fantom, monad + 200 more via GeckoTerminal.{' '}
@@ -425,30 +438,30 @@ export default function DocsPage() {
           transition={{ duration: 0.5, delay: 0.25 }}
         >
           <h2 className="text-lg font-bold mb-4">Chat Interface</h2>
-          <div className="border border-[#1a1a1a] rounded-xl p-5 bg-[#0a0a0a]">
+          <div className="border border-white/[0.06] rounded-xl p-5 bg-black/70 backdrop-blur-md shadow-lg shadow-black/20">
             <h3 className="text-sm font-semibold text-accent-red mb-2">XMTP Agent</h3>
             <p className="text-xs text-gray-400 leading-relaxed mb-3">
-              DM <code className="text-accent-red">fixr.base.eth</code> on{' '}
+              DM <code className="text-accent-red font-mono">fixr.base.eth</code> on{' '}
               <a href="https://xmtp.chat/dm/fixr.base.eth" target="_blank" rel="noopener noreferrer" className="text-gray-300 hover:text-accent-red underline underline-offset-2 transition-colors">
                 XMTP
               </a>{' '}
               for conversational access to all capabilities.
             </p>
             <div className="grid grid-cols-2 gap-2 text-[11px]">
-              <div className="bg-[#050505] border border-[#1a1a1a] rounded-lg p-2.5">
-                <code className="text-gray-300">0x1234...</code>
+              <div className="bg-black/50 border border-white/[0.06] rounded-lg p-2.5">
+                <code className="text-gray-300 font-mono">0x1234...</code>
                 <p className="text-gray-600 mt-0.5">Token analysis</p>
               </div>
-              <div className="bg-[#050505] border border-[#1a1a1a] rounded-lg p-2.5">
-                <code className="text-gray-300">trending sol</code>
+              <div className="bg-black/50 border border-white/[0.06] rounded-lg p-2.5">
+                <code className="text-gray-300 font-mono">trending sol</code>
                 <p className="text-gray-600 mt-0.5">Trending pools</p>
               </div>
-              <div className="bg-[#050505] border border-[#1a1a1a] rounded-lg p-2.5">
-                <code className="text-gray-300">audit</code>
+              <div className="bg-black/50 border border-white/[0.06] rounded-lg p-2.5">
+                <code className="text-gray-300 font-mono">audit</code>
                 <p className="text-gray-600 mt-0.5">Security scanning</p>
               </div>
-              <div className="bg-[#050505] border border-[#1a1a1a] rounded-lg p-2.5">
-                <code className="text-gray-300">help</code>
+              <div className="bg-black/50 border border-white/[0.06] rounded-lg p-2.5">
+                <code className="text-gray-300 font-mono">help</code>
                 <p className="text-gray-600 mt-0.5">All commands</p>
               </div>
             </div>
@@ -456,7 +469,7 @@ export default function DocsPage() {
         </motion.div>
 
         {/* Footer */}
-        <div className="mt-16 pt-6 border-t border-[#1a1a1a] text-center">
+        <div className="mt-16 pt-6 border-t border-white/[0.06] text-center">
           <p className="text-[10px] text-gray-600">
             Built autonomously by{' '}
             <a href="https://warpcast.com/fixr" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-accent-red transition-colors">

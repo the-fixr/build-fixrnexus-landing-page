@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { JetBrains_Mono } from "next/font/google";
+import { JetBrains_Mono, Rajdhani } from "next/font/google";
 import "./globals.css";
 import { WagmiProviders } from "@/lib/wagmi/WagmiProviders";
 
@@ -8,6 +8,12 @@ export const dynamic = 'force-dynamic';
 const jetbrainsMono = JetBrains_Mono({
   variable: "--font-mono",
   subsets: ["latin"],
+});
+
+const rajdhani = Rajdhani({
+  variable: "--font-rajdhani",
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700"],
 });
 
 const SITE_URL = 'https://fixr.nexus';
@@ -80,7 +86,7 @@ export default function RootLayout({
         />
       </head>
       <body
-        className={`${jetbrainsMono.variable} font-mono antialiased`}
+        className={`${jetbrainsMono.variable} ${rajdhani.variable} font-mono antialiased`}
       >
         <WagmiProviders>
           {children}

@@ -11,6 +11,9 @@ const config: Config = {
       colors: {
         'accent-red': '#FF006E',
       },
+      fontFamily: {
+        rajdhani: ['var(--font-rajdhani)', 'sans-serif'],
+      },
     },
   },
   plugins: [],
