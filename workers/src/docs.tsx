@@ -1,6 +1,6 @@
 /**
  * Fixr API Documentation Page
- * Matches the landing page theme
+ * Matches the landing page theme: camo bg, floating black boxes, Rajdhani + mono
  */
 
 export function generateDocsPage(): string {
@@ -12,37 +12,97 @@ export function generateDocsPage(): string {
   <title>Fixr API Docs</title>
   <meta name="description" content="API documentation for Fixr - Token analysis, builder feeds, and more.">
   <meta property="og:title" content="Fixr API Documentation">
-  <meta property="og:description" content="Integrate with Fixr's API for token analysis, builder tracking, and security audits.">
+  <meta property="og:description" content="Integrate with Fixr's API for token analysis, builder tracking, security audits, and more.">
   <meta property="og:image" content="https://fixr.nexus/fixrpfp.png">
-  <link rel="icon" href="/fixrpfp.png">
+  <link rel="icon" href="https://fixr.nexus/fixrpfp.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
     :root {
-      --bg: #050505;
-      --surface: #0a0a0a;
-      --surface-hover: #111;
-      --border: #1a1a1a;
+      --bg: #030303;
+      --surface: rgba(0, 0, 0, 0.7);
+      --surface-inner: rgba(0, 0, 0, 0.5);
+      --border: rgba(255, 255, 255, 0.06);
       --text: #fff;
-      --text-muted: #888;
+      --text-muted: #999;
       --text-dim: #555;
-      --accent: #8b5cf6;
-      --accent-glow: rgba(139, 92, 246, 0.3);
+      --accent: #FF006E;
+      --accent-glow: rgba(255, 0, 110, 0.15);
       --green: #10b981;
       --orange: #f59e0b;
       --blue: #3b82f6;
-      --pink: #ec4899;
+      --red: #ef4444;
     }
 
     body {
-      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      font-family: 'Rajdhani', sans-serif;
       background: var(--bg);
       color: var(--text);
       min-height: 100vh;
       line-height: 1.6;
+      position: relative;
+    }
+
+    /* Camo Background */
+    .camo-bg {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      overflow: hidden;
+    }
+
+    .camo-bg svg {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .camo-grain {
+      position: absolute;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      background-repeat: repeat;
+      background-size: 128px 128px;
+      opacity: 0.03;
+      pointer-events: none;
+    }
+
+    .camo-vignette {
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse at center, transparent 30%, rgba(0,0,0,0.7) 100%);
+      pointer-events: none;
+    }
+
+    /* PFP Watermark */
+    .pfp-watermark {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+    }
+
+    .pfp-watermark img {
+      width: 350px;
+      height: 350px;
+      border-radius: 50%;
+      opacity: 0.04;
+    }
+
+    @media (min-width: 768px) {
+      .pfp-watermark img { width: 450px; height: 450px; }
     }
 
     .container {
+      position: relative;
+      z-index: 10;
       max-width: 1000px;
       margin: 0 auto;
       padding: 3rem 2rem;
@@ -93,16 +153,29 @@ export function generateDocsPage(): string {
     .header-link {
       color: var(--text-muted);
       text-decoration: none;
-      font-size: 0.85rem;
+      font-size: 0.9rem;
+      font-weight: 500;
       padding: 0.5rem 1rem;
       border: 1px solid var(--border);
       border-radius: 6px;
       transition: all 0.2s;
+      backdrop-filter: blur(8px);
+      background: var(--surface);
     }
 
     .header-link:hover {
       color: var(--text);
       border-color: var(--accent);
+    }
+
+    .header-link.accent {
+      background: rgba(255, 0, 110, 0.1);
+      border-color: rgba(255, 0, 110, 0.2);
+      color: var(--accent);
+    }
+
+    .header-link.accent:hover {
+      background: rgba(255, 0, 110, 0.2);
     }
 
     /* Intro */
@@ -113,6 +186,7 @@ export function generateDocsPage(): string {
     .intro h1 {
       font-size: 2.5rem;
       margin-bottom: 1rem;
+      font-weight: 700;
     }
 
     .intro p {
@@ -129,10 +203,21 @@ export function generateDocsPage(): string {
       border: 1px solid var(--border);
       border-radius: 8px;
       font-size: 0.9rem;
+      backdrop-filter: blur(12px);
     }
 
     .base-url code {
       color: var(--accent);
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    }
+
+    /* Floating Box */
+    .floating-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
     }
 
     /* Section */
@@ -180,6 +265,7 @@ export function generateDocsPage(): string {
       border-radius: 8px;
       padding: 1.25rem;
       text-align: center;
+      backdrop-filter: blur(12px);
     }
 
     .tier-card.highlight {
@@ -188,11 +274,12 @@ export function generateDocsPage(): string {
     }
 
     .tier-name {
-      font-size: 0.75rem;
+      font-size: 0.8rem;
       color: var(--text-muted);
       text-transform: uppercase;
       letter-spacing: 0.1em;
       margin-bottom: 0.5rem;
+      font-weight: 600;
     }
 
     .tier-amount {
@@ -203,7 +290,7 @@ export function generateDocsPage(): string {
     }
 
     .tier-limit {
-      font-size: 0.85rem;
+      font-size: 0.9rem;
       color: var(--text-muted);
     }
 
@@ -213,7 +300,8 @@ export function generateDocsPage(): string {
     }
 
     .endpoint-group-title {
-      font-size: 0.85rem;
+      font-size: 0.9rem;
+      font-weight: 600;
       color: var(--text-muted);
       text-transform: uppercase;
       letter-spacing: 0.05em;
@@ -228,6 +316,8 @@ export function generateDocsPage(): string {
       border-radius: 8px;
       margin-bottom: 0.75rem;
       overflow: hidden;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
     }
 
     .endpoint-header {
@@ -239,10 +329,11 @@ export function generateDocsPage(): string {
     }
 
     .endpoint-header:hover {
-      background: var(--surface-hover);
+      background: rgba(255, 255, 255, 0.02);
     }
 
     .method {
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
       font-size: 0.7rem;
       font-weight: 600;
       padding: 0.25rem 0.5rem;
@@ -250,18 +341,19 @@ export function generateDocsPage(): string {
       text-transform: uppercase;
     }
 
-    .method.get { background: rgba(16, 185, 129, 0.2); color: var(--green); }
-    .method.post { background: rgba(59, 130, 246, 0.2); color: var(--blue); }
-    .method.put { background: rgba(245, 158, 11, 0.2); color: var(--orange); }
-    .method.delete { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+    .method.get { background: rgba(16, 185, 129, 0.15); color: var(--green); }
+    .method.post { background: rgba(59, 130, 246, 0.15); color: var(--blue); }
+    .method.put { background: rgba(245, 158, 11, 0.15); color: var(--orange); }
+    .method.delete { background: rgba(239, 68, 68, 0.15); color: var(--red); }
 
     .endpoint-path {
-      font-size: 0.9rem;
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      font-size: 0.85rem;
       flex: 1;
     }
 
     .endpoint-desc {
-      font-size: 0.8rem;
+      font-size: 0.85rem;
       color: var(--text-dim);
     }
 
@@ -269,7 +361,7 @@ export function generateDocsPage(): string {
       display: none;
       padding: 1.25rem;
       border-top: 1px solid var(--border);
-      background: var(--bg);
+      background: var(--surface-inner);
     }
 
     .endpoint.open .endpoint-body {
@@ -286,6 +378,7 @@ export function generateDocsPage(): string {
 
     .endpoint-section-title {
       font-size: 0.75rem;
+      font-weight: 600;
       color: var(--text-muted);
       text-transform: uppercase;
       letter-spacing: 0.05em;
@@ -294,24 +387,26 @@ export function generateDocsPage(): string {
 
     /* Code blocks */
     pre {
-      background: var(--surface);
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      background: rgba(10, 10, 10, 0.8);
       border: 1px solid var(--border);
       border-radius: 6px;
       padding: 1rem;
       overflow-x: auto;
-      font-size: 0.85rem;
+      font-size: 0.82rem;
       line-height: 1.5;
     }
 
     code {
-      font-family: inherit;
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
     }
 
     .code-inline {
-      background: var(--surface);
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      background: rgba(10, 10, 10, 0.6);
       padding: 0.15rem 0.4rem;
       border-radius: 4px;
-      font-size: 0.85em;
+      font-size: 0.82em;
       color: var(--accent);
     }
 
@@ -326,10 +421,12 @@ export function generateDocsPage(): string {
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 1.25rem;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
     }
 
     .auth-method-title {
-      font-size: 1rem;
+      font-size: 1.05rem;
       font-weight: 600;
       margin-bottom: 0.5rem;
       display: flex;
@@ -338,7 +435,7 @@ export function generateDocsPage(): string {
     }
 
     .auth-method-desc {
-      font-size: 0.85rem;
+      font-size: 0.9rem;
       color: var(--text-muted);
       margin-bottom: 1rem;
     }
@@ -362,10 +459,11 @@ export function generateDocsPage(): string {
       padding: 1rem;
       text-align: center;
       position: relative;
+      backdrop-filter: blur(12px);
     }
 
     .flow-step::after {
-      content: '→';
+      content: '\\2192';
       position: absolute;
       right: -1rem;
       top: 50%;
@@ -379,7 +477,7 @@ export function generateDocsPage(): string {
 
     @media (max-width: 700px) {
       .flow-step::after {
-        content: '↓';
+        content: '\\2193';
         right: auto;
         bottom: -1rem;
         top: auto;
@@ -389,21 +487,28 @@ export function generateDocsPage(): string {
     }
 
     .flow-num {
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
       font-size: 0.7rem;
       color: var(--accent);
       margin-bottom: 0.25rem;
     }
 
     .flow-text {
-      font-size: 0.75rem;
+      font-size: 0.8rem;
       color: var(--text-muted);
+      font-weight: 500;
     }
 
     /* Tables */
     table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 0.85rem;
+      font-size: 0.9rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      backdrop-filter: blur(12px);
     }
 
     th, td {
@@ -413,11 +518,15 @@ export function generateDocsPage(): string {
     }
 
     th {
-      font-size: 0.7rem;
+      font-size: 0.75rem;
       color: var(--text-muted);
       text-transform: uppercase;
       letter-spacing: 0.05em;
-      font-weight: 500;
+      font-weight: 600;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
     }
 
     /* Footer */
@@ -426,7 +535,7 @@ export function generateDocsPage(): string {
       padding: 2rem 0;
       border-top: 1px solid var(--border);
       margin-top: 3rem;
-      font-size: 0.8rem;
+      font-size: 0.85rem;
       color: var(--text-dim);
     }
 
@@ -434,21 +543,79 @@ export function generateDocsPage(): string {
       color: var(--accent);
       text-decoration: none;
     }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #1a1a1a; border-radius: 2px; }
+    ::-webkit-scrollbar-thumb:hover { background: #2a2a2a; }
   </style>
 </head>
 <body>
+  <!-- Camo Background -->
+  <div class="camo-bg">
+    <svg preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <filter id="camo-1">
+          <feTurbulence type="fractalNoise" baseFrequency="0.012" numOctaves="4" seed="1" result="noise"/>
+          <feColorMatrix type="saturate" values="0" in="noise" result="gray"/>
+          <feComponentTransfer in="gray" result="threshold">
+            <feFuncA type="discrete" tableValues="0 0 0 0 1 1 0 0"/>
+          </feComponentTransfer>
+        </filter>
+        <filter id="camo-2">
+          <feTurbulence type="fractalNoise" baseFrequency="0.008" numOctaves="3" seed="42" result="noise"/>
+          <feColorMatrix type="saturate" values="0" in="noise" result="gray"/>
+          <feComponentTransfer in="gray" result="threshold">
+            <feFuncA type="discrete" tableValues="0 0 0 1 1 0 0 0"/>
+          </feComponentTransfer>
+        </filter>
+        <filter id="camo-red">
+          <feTurbulence type="fractalNoise" baseFrequency="0.006" numOctaves="3" seed="77" result="noise"/>
+          <feComponentTransfer in="noise" result="threshold">
+            <feFuncR type="discrete" tableValues="0 0 0 1 1 0 0 0"/>
+            <feFuncG type="discrete" tableValues="0 0 0 0 0 0 0 0"/>
+            <feFuncB type="discrete" tableValues="0 0 0 0 0 0 0 0"/>
+            <feFuncA type="discrete" tableValues="0 0 0 1 1 0 0 0"/>
+          </feComponentTransfer>
+        </filter>
+        <filter id="camo-red-2">
+          <feTurbulence type="fractalNoise" baseFrequency="0.01" numOctaves="2" seed="123" result="noise"/>
+          <feComponentTransfer in="noise" result="threshold">
+            <feFuncR type="discrete" tableValues="0 0 1 1 0 0 0 0"/>
+            <feFuncG type="discrete" tableValues="0 0 0 0 0 0 0 0"/>
+            <feFuncB type="discrete" tableValues="0 0 0 0 0 0 0 0"/>
+            <feFuncA type="discrete" tableValues="0 0 1 1 0 0 0 0"/>
+          </feComponentTransfer>
+        </filter>
+      </defs>
+      <rect width="100%" height="100%" fill="#111" filter="url(#camo-1)" opacity="0.25"/>
+      <rect width="100%" height="100%" fill="#161616" filter="url(#camo-2)" opacity="0.15"/>
+      <rect width="100%" height="100%" fill="#990000" filter="url(#camo-red)" opacity="0.1"/>
+      <rect width="100%" height="100%" fill="#800000" filter="url(#camo-red-2)" opacity="0.07"/>
+    </svg>
+    <div class="camo-grain"></div>
+    <div class="camo-vignette"></div>
+  </div>
+
+  <!-- PFP Watermark -->
+  <div class="pfp-watermark">
+    <img src="https://fixr.nexus/fixrpfp.png" alt="">
+  </div>
+
   <div class="container">
     <!-- Header -->
     <div class="header">
-      <a href="/" class="logo">
-        <img src="/fixrpfp.png" alt="Fixr">
+      <a href="https://fixr.nexus" class="logo">
+        <img src="https://fixr.nexus/fixrpfp.png" alt="Fixr">
         <div>
           <div class="logo-text">FIXR</div>
           <div class="logo-sub">API Docs</div>
         </div>
       </a>
       <div class="header-links">
-        <a href="/" class="header-link">Home</a>
+        <a href="https://fixr.nexus" class="header-link">Home</a>
+        <a href="https://fixr.nexus/hub" class="header-link accent">Hub</a>
         <a href="https://farcaster.xyz/fixr" class="header-link" target="_blank">Farcaster</a>
       </div>
     </div>
@@ -465,7 +632,7 @@ export function generateDocsPage(): string {
     <!-- Access Tiers -->
     <div class="section">
       <div class="section-header">
-        <h2>⚡ Access Tiers</h2>
+        <h2>Access Tiers</h2>
         <div class="section-line"></div>
       </div>
       <div class="tier-grid">
@@ -490,7 +657,7 @@ export function generateDocsPage(): string {
           <div class="tier-limit">Unlimited</div>
         </div>
       </div>
-      <p style="font-size: 0.85rem; color: var(--text-muted);">
+      <p style="font-size: 0.9rem; color: var(--text-muted);">
         Stake FIXR tokens to unlock higher rate limits. Or pay $0.01 USDC per call via x402.
       </p>
     </div>
@@ -498,22 +665,22 @@ export function generateDocsPage(): string {
     <!-- Authentication -->
     <div class="section">
       <div class="section-header">
-        <h2>🔐 Authentication</h2>
+        <h2>Authentication</h2>
         <div class="section-line"></div>
       </div>
       <div class="auth-methods">
         <div class="auth-method">
-          <div class="auth-method-title">📍 Wallet Header</div>
+          <div class="auth-method-title">Wallet Header</div>
           <div class="auth-method-desc">Simple - just pass your wallet address</div>
           <pre>X-Wallet-Address: 0xYourWalletAddress</pre>
         </div>
         <div class="auth-method">
-          <div class="auth-method-title">💳 x402 Payment (Base)</div>
+          <div class="auth-method-title">x402 Payment (Base)</div>
           <div class="auth-method-desc">Pay $0.01 USDC per call on Base - no staking required</div>
           <pre>X-Payment-TxHash: 0xTransactionHash</pre>
         </div>
         <div class="auth-method">
-          <div class="auth-method-title">💳 x402 Payment (Solana)</div>
+          <div class="auth-method-title">x402 Payment (Solana)</div>
           <div class="auth-method-desc">Pay $0.01 USDC per call on Solana - no staking required</div>
           <pre>X-Payment-Chain: solana
 X-Payment-TxHash: YourSolanaSignature</pre>
@@ -524,11 +691,11 @@ X-Payment-TxHash: YourSolanaSignature</pre>
     <!-- x402 Flow -->
     <div class="section">
       <div class="section-header">
-        <h2>💰 x402 Pay-Per-Call</h2>
+        <h2>x402 Pay-Per-Call</h2>
         <div class="section-line"></div>
       </div>
-      <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1rem;">
-        Pay $0.01 USDC on <strong>Base</strong> or <strong>Solana</strong> to access premium endpoints. Each transaction is single-use.
+      <p style="font-size: 0.95rem; color: var(--text-muted); margin-bottom: 1rem;">
+        Pay $0.01 USDC on <strong style="color:#fff">Base</strong> or <strong style="color:#fff">Solana</strong> to access premium endpoints. Each transaction is single-use.
       </p>
       <div class="x402-flow">
         <div class="flow-step">
@@ -549,11 +716,11 @@ X-Payment-TxHash: YourSolanaSignature</pre>
         </div>
         <div class="flow-step">
           <div class="flow-num">5</div>
-          <div class="flow-text">Success ✓</div>
+          <div class="flow-text">Success</div>
         </div>
       </div>
 
-      <p style="font-size: 0.85rem; color: var(--text-muted); margin: 1.5rem 0 0.75rem; font-weight: 600;">Base (EVM)</p>
+      <p style="font-size: 0.9rem; color: var(--text-muted); margin: 1.5rem 0 0.75rem; font-weight: 600;">Base (EVM)</p>
       <table>
         <tr>
           <th>Parameter</th>
@@ -581,7 +748,7 @@ X-Payment-TxHash: YourSolanaSignature</pre>
         </tr>
       </table>
 
-      <p style="font-size: 0.85rem; color: var(--text-muted); margin: 1.5rem 0 0.75rem; font-weight: 600;">Solana</p>
+      <p style="font-size: 0.9rem; color: var(--text-muted); margin: 1.5rem 0 0.75rem; font-weight: 600;">Solana</p>
       <table>
         <tr>
           <th>Parameter</th>
@@ -613,7 +780,7 @@ X-Payment-TxHash: YourSolanaSignature</pre>
     <!-- Endpoints -->
     <div class="section">
       <div class="section-header">
-        <h2>🛠 Endpoints</h2>
+        <h2>Endpoints</h2>
         <div class="section-line"></div>
       </div>
 
@@ -1055,10 +1222,10 @@ Content-Type: application/json
     <!-- Contracts -->
     <div class="section">
       <div class="section-header">
-        <h2>📜 Contracts</h2>
+        <h2>Contracts</h2>
         <div class="section-line"></div>
       </div>
-      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem; font-weight: 600;">Base (EVM)</p>
+      <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 0.75rem; font-weight: 600;">Base (EVM)</p>
       <table>
         <tr>
           <th>Contract</th>
@@ -1082,7 +1249,7 @@ Content-Type: application/json
         </tr>
       </table>
 
-      <p style="font-size: 0.85rem; color: var(--text-muted); margin: 1.5rem 0 0.75rem; font-weight: 600;">Solana</p>
+      <p style="font-size: 0.9rem; color: var(--text-muted); margin: 1.5rem 0 0.75rem; font-weight: 600;">Solana</p>
       <table>
         <tr>
           <th>Account</th>
@@ -1101,7 +1268,7 @@ Content-Type: application/json
 
     <!-- Footer -->
     <div class="footer">
-      <p>Built by <a href="/">Fixr</a> · <a href="https://github.com/the-fixr">GitHub</a></p>
+      <p>Built by <a href="https://fixr.nexus">Fixr</a> · <a href="https://github.com/the-fixr">GitHub</a></p>
     </div>
   </div>
 </body>
