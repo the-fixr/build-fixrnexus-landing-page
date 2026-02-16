@@ -279,6 +279,44 @@ export async function generateVideoAndWait(
   };
 }
 
+/**
+ * Generate video from image and wait for completion (with polling)
+ * Max wait time: 3 minutes
+ */
+export async function generateVideoFromImageAndWait(
+  env: Env,
+  request: ImageToVideoRequest,
+  maxWaitMs: number = 180000
+): Promise<VideoGenerationResult> {
+  const startResult = await generateVideoFromImage(env, request);
+  if (!startResult.success || !startResult.taskId) {
+    return startResult;
+  }
+
+  const taskId = startResult.taskId;
+  const startTime = Date.now();
+  const pollInterval = 5000;
+
+  while (Date.now() - startTime < maxWaitMs) {
+    await new Promise(resolve => setTimeout(resolve, pollInterval));
+
+    const result = await getVideoResult(env, taskId);
+
+    if (result.status === 'completed' || result.status === 'failed') {
+      return result;
+    }
+
+    console.log(`WaveSpeed: I2V task ${taskId} status: ${result.status}`);
+  }
+
+  return {
+    success: false,
+    taskId,
+    status: 'processing',
+    error: 'Timeout waiting for image-to-video generation',
+  };
+}
+
 // ============================================================================
 // VIDEO CONTENT TEMPLATES FOR FIXR
 // ============================================================================
