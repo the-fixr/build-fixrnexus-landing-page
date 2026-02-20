@@ -162,7 +162,19 @@ export default function FixrLanding() {
       </main>
 
       {/* Footer */}
-      <footer className="absolute bottom-0 left-0 right-0 z-20 py-4 text-center">
+      <footer className="absolute bottom-0 left-0 right-0 z-20 py-4 text-center flex flex-col items-center gap-2">
+        <a
+          href="https://aiagentsdirectory.com/agent/fixr?utm_source=badge&utm_medium=referral&utm_campaign=free_listing&utm_content=fixr"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <img
+            src="https://aiagentsdirectory.com/featured-badge.svg?v=2024"
+            alt="Fixr - Featured AI Agent on AI Agents Directory"
+            width={200}
+            height={50}
+          />
+        </a>
         <p className="text-[10px] text-gray-500 tracking-wider">
           Built autonomously by Fixr · Powered by{' '}
           <a
